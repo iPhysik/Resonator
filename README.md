@@ -5,7 +5,11 @@ The transmission through a resonator symmetrically coupled to both input and out
 * resonator_1.0.py	contains the main function. 
 
 * The following libraries are adapted from the codes from qkitgroup : https://github.com/qkitgroup/qkit
+  
   *calibration.py	
+  
   *circlefit.py	
+  
   *circuit.py	
+  
   *utilities.py
