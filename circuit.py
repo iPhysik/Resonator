@@ -65,10 +65,10 @@ class reflection_port(circlefit, save_load, plotting, calibration):
             A2 = 0.
         else:
             A2 = 0.
-            print "WARNING: The ignoreslope option is ignored! Corrections to the baseline should be done manually prior to fitting."
-            print "see also: resonator_tools.calibration.fit_baseline_amp() etc. for help on fitting the baseline."
-            print "There is also an example ipython notebook for using this function."
-            print "However, make sure to understand the impact of the baseline (parasitic coupled resonances etc.) on your system."
+#            print "WARNING: The ignoreslope option is ignored! Corrections to the baseline should be done manually prior to fitting."
+           # print "see also: resonator_tools.calibration.fit_baseline_amp() etc. for help on fitting the baseline."
+         #   print "There is also an example ipython notebook for using this function."
+          #  print "However, make sure to understand the impact of the baseline (parasitic coupled resonances etc.) on your system."
             #z_data = (np.absolute(z_data)-A2*(f_data-fr)) * np.exp(np.angle(z_data)*1j)  #usually not necessary
         if delay is None:
             if guess==True:
@@ -138,7 +138,7 @@ class reflection_port(circlefit, save_load, plotting, calibration):
                 errors = {"Ql_err":Ql_err, "Qc_err":Qc_err, "fr_err":fr_err,"chi_square":chi_square,"Qi_err":Qi_err}
                 results.update( errors )
             else:
-                print "WARNING: Error calculation failed!"
+                print("WARNING: Error calculation failed!")
         else:
             #just calc chisquared:
             fun2 = lambda x: self._residuals_notch_ideal(x,f_data,z_data)**2
@@ -218,32 +218,30 @@ class notch_port(circlefit, save_load, plotting, calibration):
         else:
             self.z_data_raw=None
     
-    def get_delay(self,f_data,z_data,delay=None,ignoreslope=True,guess=True):
+    def get_delay(self,f_data,z_data,delay=None,ignoreslope=True,guess=True,maxiter=10000):
         '''
+        locate resonance frequency using skewed lorentzian
+        use the located resonance to define a certain frequency range used for guess_delay, which is a frequency below the resonane to avoid phase jump and keep in the linear regime
         retrieves the cable delay assuming the ideal resonance has a circular shape
         modifies the cable delay until the shape Im(S21) vs Re(S21) is circular
         see "do_calibration"
+        
+        return: delay, fr,Ql
         '''
-        maxval = np.max(np.absolute(z_data))
-        z_data = z_data/maxval
-        A2, A3, A4, fr, Ql = self._fit_skewed_lorentzian(f_data,z_data)
-        if ignoreslope==True:
-            A2 = 0.
-        else:
-            A2 = 0.
-            print "WARNING: The ignoreslope option is ignored! Corrections to the baseline should be done manually prior to fitting."
-            print "see also: resonator_tools.calibration.fit_baseline_amp() etc. for help on fitting the baseline."
-            print "There is also an example ipython notebook for using this function."
-            print "However, make sure to understand the impact of the baseline (parasitic coupled resonances etc.) on your system."
-            #z_data = (np.absolute(z_data)-A2*(f_data-fr)) * np.exp(np.angle(z_data)*1j)  #usually not necessary
+        fr,Ql = self._fit_skewed_lorentzian_v2(f_data,z_data)
+        df = fr/Ql
+        index=int(np.average(np.where(np.abs(f_data-(fr-3*df))<f_data[1]-f_data[0])[0][0]))
+        print('index',index)
         if delay is None:
             if guess==True:
-                delay = self._guess_delay(f_data,z_data)
+                delay = self._guess_delay(f_data[:index],z_data[:index])
+                print("guess delay", delay)
             else:
                 delay=0.
-            delay = self._fit_delay(f_data,z_data,delay,maxiter=300)
-        params = [A2, A3, A4, fr, Ql]
-        return delay, params    
+        delay = self._fit_delay(f_data,z_data,delay,maxiter=maxiter)
+        print('get delay', delay)
+
+        return delay,fr,Ql
     
     def do_calibration(self,f_data,z_data,ignoreslope=True,guessdelay=True):
         '''
@@ -261,7 +259,7 @@ class notch_port(circlefit, save_load, plotting, calibration):
         zc = np.complex(xc,yc)
         
         fitparams = self._phase_fit(f_data,self._center(z_data,zc), Ql, fr)
-        print fitparams
+      #  print(fitparams)
         
         theta, Ql, fr = fitparams
         beta = self._periodic_boundary(theta+np.pi,np.pi)
@@ -300,14 +298,14 @@ class notch_port(circlefit, save_load, plotting, calibration):
     
         if fr is None: fr=f_data[np.argmin(np.absolute(z_data))]
         if Ql is None: Ql=1e6
-        print "in circlefit fr, Ql %f %f" % (fr,Ql)
+#        print "in circlefit fr, Ql %f %f" % (fr,Ql)
         xc, yc, r0 = self._fit_circle(z_data,refine_results=refine_results)
-        print "circlefit center %f %f %f" %(xc,yc,r0)
+#        print "circlefit center %f %f %f" %(xc,yc,r0)
         phi0 = -np.arcsin(yc/r0)
         theta0 = self._periodic_boundary(phi0+np.pi,np.pi)
         z_data_corr = self._center(z_data,np.complex(xc,yc))
         theta0, Ql, fr = self._phase_fit(f_data,z_data_corr,theta0,Ql,fr)
-        print "fit again in circlefit fr, Ql %f %f" % (fr,Ql)
+#        print "fit again in circlefit fr, Ql %f %f" % (fr,Ql)
         #print "Ql from phasefit is: " + str(Ql)
         absQc = Ql/(2.*r0)
         complQc = absQc*np.exp(1j*((-1.)*phi0))
@@ -342,7 +340,7 @@ class notch_port(circlefit, save_load, plotting, calibration):
                 errors = {"phi0_err":phi0_err, "Ql_err":Ql_err, "absQc_err":absQc_err, "fr_err":fr_err,"chi_square":chi_square,"Qi_no_corr_err":Qi_no_corr_err,"Qi_dia_corr_err": Qi_dia_corr_err}
                 results.update( errors )
             else:
-                print "WARNING: Error calculation failed!"
+                print("WARNING: Error calculation failed!")
         else:
             #just calc chisquared:
             fun2 = lambda x: self._residuals_notch_ideal(x,f_data,z_data)**2
