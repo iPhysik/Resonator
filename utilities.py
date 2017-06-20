@@ -2,6 +2,28 @@ import warnings
 import numpy as np
 import matplotlib.pyplot as plt
 
+def symmetric_lorentzian(f,Ql,Qc):
+    return Ql/Qc/(1+2j*Ql*(f/fr-1))
+
+def distorted_lorentzian(f,Ql,Qc,phi,alpha,tau,epsilon):
+    return (1-symmetric_lorentzian(f,Ql,Qc))*np.exp(1j*alpha-2j*np.pi*f*tau)*(1+epsilon*(f-fr)/f)
+
+def plotcircle(f,S21,title=''):
+    fig,ax = plt.subplots()
+    ax.plot(S21.real,S21.imag,'.')
+    plt.title(title)
+    
+def plotphase(f,S21):
+    fig,ax = plt.subplots()
+    ax.plot(f,np.unwrap(np.angle(S21)))
+    
+def phase_vs_freq(p,x):
+    theta0, Ql, fr = p
+    return theta0+2.*np.arctan(2.*Ql*(1.-x/fr))
+    
+def skewed_lorentzian(x,A2,A3,fra,Ql):
+    return A2*(x-fra)+(Smax+A3*(x-fra))/np.sqrt(1.+4.*Ql**2*((x-fra)/fra)**2)
+
 def Watt2dBm(x):
     '''
     converts from units of watts to dBm

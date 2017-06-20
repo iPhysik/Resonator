@@ -218,7 +218,7 @@ class notch_port(circlefit, save_load, plotting, calibration):
         else:
             self.z_data_raw=None
     
-    def get_delay(self,f_data,z_data,delay=None,ignoreslope=True,guess=True,maxiter=10000):
+    def get_delay(self,f_data,z_data,fr,Ql,delay=None,guess=True,maxiter=10000):
         '''
         locate resonance frequency using skewed lorentzian
         use the located resonance to define a certain frequency range used for guess_delay, which is a frequency below the resonane to avoid phase jump and keep in the linear regime
@@ -228,20 +228,21 @@ class notch_port(circlefit, save_load, plotting, calibration):
         
         return: delay, fr,Ql
         '''
-        fr,Ql = self._fit_skewed_lorentzian_v2(f_data,z_data)
+#        fr,Ql = self._fit_skewed_lorentzian_v2(f_data,z_data)
         df = fr/Ql
-        index=int(np.average(np.where(np.abs(f_data-(fr-3*df))<f_data[1]-f_data[0])[0][0]))
-        print('index',index)
+        index=int(np.average(np.where(np.abs(f_data-(fr-df))<f_data[1]-f_data[0])[0][0]))
+#        print('index',index)
         if delay is None:
             if guess==True:
                 delay = self._guess_delay(f_data[:index],z_data[:index])
                 print("guess delay", delay)
             else:
                 delay=0.
-        delay = self._fit_delay(f_data,z_data,delay,maxiter=maxiter)
-        print('get delay', delay)
+                
+        delay = self._fit_delay(f_data,z_data,fr,delay,maxiter=maxiter)
+        print('get delay', delay[1])
 
-        return delay,fr,Ql
+        return delay
     
     def do_calibration(self,f_data,z_data,ignoreslope=True,guessdelay=True):
         '''
