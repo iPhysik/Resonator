@@ -34,9 +34,9 @@ class circlefit(object):
         p_final = spopt.leastsq(residuals,p0,args=(np.array(f_data),np.array(phase)))
         return p_final[0]
     
-    def _phase_fit(self,f_data,z_data,theta0,Ql,fr):
-        phase = np.arctan2(z_data.imag,z_data.real)
-        phase = np.unwrap(phase)
+    def _phase_fit(self,f_data,phase,theta0,Ql,fr):
+#        phase = np.arctan2(z_data.imag,z_data.real)
+#        phase = np.unwrap(phase)
         def residuals_1(p,x,y,Ql):
             theta0, fr = p
             err = self._dist(y - (theta0+2.*np.arctan(2.*Ql*(1.-x/fr))))
@@ -222,7 +222,7 @@ class circlefit(object):
 #            print('print : fr,phase:',fr,phasedelay)
 #            print(p)
             # take into account epsilon in https://arxiv.org/pdf/1108.3117.pdf
-            z_data_temp = y*np.exp(1j*(2.*np.pi*phasedelay*x))/(1+b*((x-fr)/fr))#+c*((x-fr)/fr)**2)
+            z_data_temp = y*np.exp(1j*(2.*np.pi*phasedelay*x))#/(1+b*((x-fr)/fr))#+c*((x-fr)/fr)**2)
             xc,yc,r0 = self._fit_circle(z_data_temp,refine_results=False)
             err = np.sqrt(((z_data_temp.real-xc)**2+(z_data_temp.imag-yc)**2))-r0
             return err
@@ -274,10 +274,35 @@ class circlefit(object):
 #            return np.array([np.absolute( ( (1+b*(f-fr)/fr)*a*np.exp(np.complex(0,alpha))*np.exp(np.complex(0,-2.*np.pi*delay*x[i])) * ( 1 - (Ql/absQc*np.exp(np.complex(0,phi0)))/(np.complex(1,2*Ql*(x[i]-fr)/fr)) )  ) )**2 for i in range(len(x))])
         def residuals(p,x,y):
             fr,absQc,Ql,phi0,delay,a,alpha,b = p
+            b=0
             err = [np.absolute( y[i] - ( a*(1+b*(x[i]-fr)/fr)*np.exp(np.complex(0,alpha))*np.exp(np.complex(0,-2.*np.pi*delay*x[i])) * ( 1 - (Ql/absQc*np.exp(np.complex(0,phi0)))/(np.complex(1,2*Ql*(x[i]-fr)/fr)) )  ) ) for i in range(len(x))]
             return np.array(err)
             
         p0 = [fr,Qc,Ql,phi,delay,a,alpha,b]
+        (popt, params_cov, infodict, errmsg, ier) = spopt.leastsq(residuals,p0,args=(np.array(f_data),np.array(z_data)),full_output=True,maxfev=maxiter)
+#        len_ydata = len(np.array(f_data))
+#        if (len_ydata > len(p0)) and params_cov is not None:  #p_final[1] is cov_x data  #this caculation is from scipy curve_fit routine - no idea if this works correctly...
+#            s_sq = (funcsqr(popt, np.array(f_data))).sum()/(len_ydata-len(p0))
+#            params_cov = params_cov * s_sq
+#        else:
+#            params_cov = np.inf
+#        print(popt)
+        return popt, params_cov, infodict, errmsg, ier
+        
+        
+    def _fit_entire_model_3(self,f_data,z_data,fr,Qc,Qi,phi,delay,a=1.,alpha=0.,maxiter=0):
+        '''
+        fits the whole model: (1+b*(f-fr)/fr)a*exp(i*alpha)*exp(-2*pi*i*f*delay) * [ 1 - {Ql/Qc*exp(i*phi0)} / {1+2*i*Ql*(f-fr)/fr} ]
+        '''
+#        def funcsqr(p,x):
+#            fr,absQc,Ql,phi0,delay,a,alpha = p
+#            return np.array([np.absolute( ( (1+b*(f-fr)/fr)*a*np.exp(np.complex(0,alpha))*np.exp(np.complex(0,-2.*np.pi*delay*x[i])) * ( 1 - (Ql/absQc*np.exp(np.complex(0,phi0)))/(np.complex(1,2*Ql*(x[i]-fr)/fr)) )  ) )**2 for i in range(len(x))])
+        def residuals(p,x,y):
+            fr,Qc,Qi,phi,delay,a,alpha = p
+            err = [np.absolute( y[i] - ( np.exp(np.complex(0,-2.*np.pi*delay*x[i]))/( 1+(Qi/Qc*np.exp(np.complex(0,phi)))/(np.complex(1,2*Qi*(x[i]-fr)/fr)) )/(a*np.exp(np.complex(0,alpha)))  ) ) for i in range(len(x))]
+            return np.array(err)
+            
+        p0 = [fr,Qc,Qi,phi,delay,a,alpha]
         (popt, params_cov, infodict, errmsg, ier) = spopt.leastsq(residuals,p0,args=(np.array(f_data),np.array(z_data)),full_output=True,maxfev=maxiter)
 #        len_ydata = len(np.array(f_data))
 #        if (len_ydata > len(p0)) and params_cov is not None:  #p_final[1] is cov_x data  #this caculation is from scipy curve_fit routine - no idea if this works correctly...

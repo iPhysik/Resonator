@@ -16,9 +16,11 @@ import scipy.optimize as spopt
 from scipy import stats
 from circuit import *
 from utilities import phase_vs_freq
+REFINE=True
+Maryland,UCSB = [True,False][::]
 
 def loaddata(fname):
-    data = np.loadtxt(fname,skiprows=2)   
+    data = np.loadtxt(fname,skiprows=19) 
     f = data[:,2]
     mag=data[:,3]
     phase=-data[:,4]
@@ -35,30 +37,27 @@ if __name__ == "__main__":
 
 #    fname = "4_11_2013_LCmeander2_S21vsFreq_Pmeas=-133dBm_T=20mK"  
     # set file directory and name
-    fdir = '../data/'
-    fname = fdir+"170603-ADC_InOx04_f6.06_ps500mK-123711_AeroflexCh1=40dB.dat"
-    
+    fdir = "D:\Dropbox\Drive\Projects\Resonator\InOx resonator measurement\\08012017"
+    fname = fdir+"\\170807-ADC_InOx05_rng200mV_f4.24_30dB-165515.txt"  
     f,S21 = loaddata(fname)
     port = notch_port(f,S21) 
-    f=f[:]
-    S21=S21[:]
-
+    start,end=[0,f.size]
+    f=f[start:end]
+    S21=S21[start:end]
+    
     plt.subplots(2,1)
     plt.suptitle('Raw data')
     plt.subplot(211)
-    plt.plot(f,np.abs(S21))
+    plt.plot(f,np.abs(S21),'+-')
     plt.subplot(212)
-    plt.plot(f,np.angle(S21))
+    plt.plot(f,np.unwrap(np.angle(S21)),'+-')
     
     
    # # 1st Remove electric delay ===================
     fr,Ql=port._fit_skewed_lorentzian_v2(f,S21)
-    b,delay = port.get_delay(f,S21,fr,Ql,delay = None, maxiter=int(10000)) # use _fit_circle
-    nS21 = port._remove_cable_delay(f,S21,-delay)/(1+b*((f-fr)/fr))#+c*((f-fr)/fr)**2)
-#    delay=port._optimizedelay(f,nS21,Ql,fr,maxiter=100)
-#    print("delay:",  delay)pp
-#    nS21 = port._remove_cable_delay(f,nS21,-3)
-# plot data after electric delay removed
+    b,delay = port.get_delay(f,S21,fr,Ql,delay = 40, maxiter=int(10000)) # use _fit_circle
+#    for delay in [47,48]:
+    nS21 = port._remove_cable_delay(f,S21,-delay)#/(1+b*((f-fr)/fr))#+c*((f-fr)/fr)**2)
     plt.subplots()    
     plt.title('phase after delay remove')
     plt.plot(f,np.unwrap(np.angle(nS21)),'+')
@@ -66,125 +65,150 @@ if __name__ == "__main__":
     plt.suptitle('S21 delay remove before after')
     plt.plot(S21.real,S21.imag,'.-',c='b')
     plt.plot(nS21.real,nS21.imag,'.-',c='r')
-    
-    # circle fit to extract alpha and a 
-    f_data=f[:]
-    z_data=nS21[:] 
-    xc,yc,r0 = port._fit_circle(z_data,refine_results=True)
-    plt.subplots()
-    plt.title("circle fit 1")
-    plt.plot(np.real(z_data),np.imag(z_data),'+',xc+r0*np.cos(angles),yc+r0*np.sin(angles))
-
-    #center the circle to obtain a and alpha
-    zp_data=port._center(z_data,xc+1j*yc)
-    theta0= np.average(np.unwrap(np.arctan2(zp_data.imag,zp_data.real))[np.where(np.abs(f_data-fr)<f[1]-f[0])])
-    theta0,Ql,fr=port._phase_fit(f_data,zp_data,theta0,Ql,fr)
-    print("first phase fit : theta0,Ql,fr :",theta0,Ql,fr)
-    plt.subplots()
-    plt.title('phase fit results vs data')
-    plt.plot(f_data,np.unwrap(np.angle(zp_data)),f_data,np.unwrap(phase_vs_freq([theta0, Ql, fr],f_data)))
-    
-    a = np.abs(xc+r0*np.cos(theta0-np.pi)+1j*(yc+r0*np.sin(theta0-np.pi)))
-    alpha = np.angle(xc+r0*np.cos(theta0-np.pi)+1j*(yc+r0*np.sin(theta0-np.pi)))
-    print('a, alpha:', a, alpha)
-    plt.subplots()
-    plt.title("Check off resonance positon ")
-    plt.plot(np.real(z_data),np.imag(z_data),'+',xc+r0*np.cos(angles),yc+r0*np.sin(angles))
-    plt.plot(a*np.cos(alpha),a*np.sin(alpha),'o',c='r')
-
-    plt.subplots()
-    plt.title('Check on resonance position obtained through fitting')
-    plt.plot(f,np.abs(nS21),'+',fr,np.abs(xc+r0*np.cos(theta0)+1j*(yc+r0*np.sin(theta0))),'o')
-
-    #%%
-    # normalize
-    z_data=z_data/(a*np.exp(1j*alpha)) 
-    z_data=(1-z_data)
-    
-    xc,yc,r0 = port._fit_circle(z_data,refine_results=True)
-    plt.subplots()
-    plt.title('S21 after normalization')
-    plt.plot(z_data.real,z_data.imag,'.-',xc+r0*np.cos(angles),yc+r0*np.sin(angles))
-    
-    phi= np.arctan2(yc,xc)
-    print("phi: ", phi)
-    z_data=z_data*np.exp(-1j*phi)
-    plt.subplots()
-    plt.title('plot canoncial posiiton of S21')
-    plt.plot(z_data.real,z_data.imag)
-    plt.xlim(-1,1),plt.ylim(-1,1)
-    
-#%%
-    Qc = Ql/2/r0
-    Qi = 1./(1./Ql-1./Qc)
-
-    S21sim = a*np.exp(1j*alpha-1j*2*np.pi*f*delay)*(1-(Ql/Qc)*np.exp(1j*phi)/(1+2j*Ql*(f/fr-1)))*(1+b*(f-fr)/fr)
-    fig,ax = plt.subplots(2,1)
-    plt.suptitle('Raw data(blue dots) vs fitting(red solid line)')
-    ax[0].plot(f,np.abs(S21),'.',c='b')
-    ax[0].plot(f,np.abs(S21sim),'-',c='r')
-    ax[1].plot(f,np.unwrap(np.angle(S21)),'.',c='b')
-    ax[1].plot(f,np.unwrap(np.angle(S21sim)),'-',c='r')
-    
-    print('Qi\tQc\tQl\tfr\ta\talpha\tdelay\tphi\tb:')
-    print('%d\t%d\t%d\t%.4f\t%.6f\t%.2f\t%.2f\t%.2f\t%.2f'%(Qi,Qc,Ql,fr,a,alpha,delay,phi,b))    
-    
-    print('Start refine results:')
-    num_of_iter = 20
-    for j in np.arange(num_of_iter):
-        popt, params_cov, infodict, errmsg, ier  =port._fit_entire_model_2(f,S21,fr,Qc,Ql,phi,delay=delay,a=a,alpha=alpha,b=b,maxiter=1000)
+            
         
-        fr,Qc,Ql,phi,delay,a,alpha,b = popt
-        S21sim = a*np.exp(1j*alpha-1j*2*np.pi*f*delay)*(1-(Ql/Qc)*np.exp(1j*phi)/(1+2j*Ql*(f/fr-1)))*(1+b*(f-fr)/fr)
-#        fig,ax = plt.subplots(2,1)
-#        plt.suptitle('Raw data(blue dots) vs fitting(red solid line), after fit entire model')
-#        ax[0].plot(f,np.abs(S21),'.',c='b')
-#        ax[0].plot(f,np.abs(S21sim),'-',c='r')
-#        ax[1].plot(f,np.unwrap(np.angle(S21)),'.',c='b')
-#        ax[1].plot(f,np.unwrap(np.angle(S21sim)),'-',c='r')
-#        print('Qi\tQc\tQl\tfr\ta\talpha\tdelay\tphi\tb:')
-#        print('%d\t%d\t%d\t%.4f\t%.6f\t%.2f\t%.2f\t%.2f\t%.2f'%(Qi,Qc,Ql,fr,a,alpha,delay,phi,b))   
+    if REFINE:
+        num_iter = 5
+        PLOT=False
+    else:
+        num_iter = 1
+        PLOT=True
         
-        nS21 = port._remove_cable_delay(f,S21,-delay)/(1+b*((f-fr)/fr))#+c*((f-fr)/fr)**2)
-        
-        # circle fit to extract alpha and a 
+    for i in range(num_iter):
+
+        if UCSB:
+            nS21=1/nS21
+            
         f_data=f[:]
         z_data=nS21[:] 
         xc,yc,r0 = port._fit_circle(z_data,refine_results=True)
+        
+        if PLOT:
+            plt.subplots()
+            plt.title("circle fit 1")
+            plt.plot(np.real(z_data),np.imag(z_data),'+',xc+r0*np.cos(angles),yc+r0*np.sin(angles),xc,yc,'o')
+            plt.subplots()
+            plt.title('z_data phase')
+            plt.plot(f,np.unwrap(np.angle(z_data)))
+            
         #center the circle to obtain a and alpha
         zp_data=port._center(z_data,xc+1j*yc)
-        theta0= np.average(np.unwrap(np.arctan2(zp_data.imag,zp_data.real))[np.where(np.abs(f_data-fr)<f[1]-f[0])])
-        theta0,Ql,fr=port._phase_fit(f_data,zp_data,theta0,Ql,fr)
+        phase = np.arctan2(zp_data.imag,zp_data.real)
+        phase = np.unwrap(phase)
+        if PLOT:
+            plt.subplots()
+            plt.title("circle after center")
+            plt.plot(np.real(zp_data),np.imag(zp_data),'+',r0*np.cos(angles),r0*np.sin(angles))
+            plt.subplots()
+            plt.title('z_data phase after center')
+            plt.plot(f,np.unwrap(np.angle(zp_data)))
         
-        if j == (num_of_iter-1):
+        if UCSB:
+            if phase[0]<phase[-1]:
+                phase = -phase
+                theta0_sign_reverse=True
+            else:
+                theta0_sign_reverse=False
+                
+        fr = f[np.where(np.abs(S21)==np.min(np.abs(S21)))[0][0]]
+        theta0=0.5*(np.max(phase)+np.min(phase))
+        theta0,Ql,fr=port._phase_fit(f_data,phase,theta0,Ql,fr)
+        
+        if UCSB: 
+            Qi = Ql
+            if theta0_sign_reverse:
+                theta0=-theta0
+                                
+        print("first phase fit : theta0,Ql,fr :",theta0,Ql,fr)
+        if PLOT:
             plt.subplots()
             plt.title('phase fit results vs data')
-            plt.plot(f_data,np.unwrap(np.angle(zp_data)),f_data,np.unwrap(phase_vs_freq([theta0, Ql, fr],f_data)))
+            plt.plot(f_data,phase,f_data,(phase_vs_freq([theta0, Ql, fr],f_data)))
         
         a = np.abs(xc+r0*np.cos(theta0-np.pi)+1j*(yc+r0*np.sin(theta0-np.pi)))
         alpha = np.angle(xc+r0*np.cos(theta0-np.pi)+1j*(yc+r0*np.sin(theta0-np.pi)))
+        print('a, alpha:', a, alpha)
+        
+        if PLOT:
+            plt.subplots()
+            plt.title("Check off resonance positon ")
+            plt.plot(np.real(z_data),np.imag(z_data),'+',xc+r0*np.cos(angles),yc+r0*np.sin(angles))
+            plt.plot(a*np.cos(alpha),a*np.sin(alpha),'o',c='r')
+    
+            plt.subplots()
+            plt.title('Check on resonance position obtained through fitting')
+            plt.plot(f,np.abs(nS21),'+',fr,np.abs(xc+r0*np.cos(theta0)+1j*(yc+r0*np.sin(theta0))),'o')
+        #%%
         # normalize
         z_data=z_data/(a*np.exp(1j*alpha)) 
-        z_data=(1-z_data)
         
+        if UCSB:
+            z_data=z_data-1
+    
+        if Maryland:
+            z_data=(1-z_data)
+            
         xc,yc,r0 = port._fit_circle(z_data,refine_results=True)
-        if j == (num_of_iter-1):
+        
+        if PLOT:
             plt.subplots()
             plt.title('S21 after normalization')
             plt.plot(z_data.real,z_data.imag,'.-',xc+r0*np.cos(angles),yc+r0*np.sin(angles))
-        
+            
         phi= np.arctan2(yc,xc)
+        print("phi: ", phi)
         z_data=z_data*np.exp(-1j*phi)
-        Qc = Ql/2/r0
-        Qi = 1./(1./Ql-1./Qc)
-    
-        S21sim = a*np.exp(1j*alpha-1j*2*np.pi*f*delay)*(1-(Ql/Qc)*np.exp(1j*phi)/(1+2j*Ql*(f/fr-1)))*(1+b*(f-fr)/fr)
-        if j == (num_of_iter-1):
+        
+        if PLOT:
+            plt.subplots()
+            plt.title('plot canoncial posiiton of S21')
+            plt.plot(z_data.real,z_data.imag,'.')
+    #    plt.xlim(-1,1),plt.ylim(-1,1)
+        
+    #%%
+        if Maryland:
+            Qc = Ql/2/r0
+            Qi = 1./(1./Ql-1./Qc)
+            S21sim = a*np.exp(1j*alpha-1j*2*np.pi*f*delay)*(1-(Ql/Qc)*np.exp(1j*phi)/(1+2j*Ql*(f/fr-1)))
+            
+        if UCSB: 
+            Qc = Qi/2/r0
+            Ql=1/(1/Qc+1/Qi)
+            S21sim_inverse=(1.+Qi/Qc*np.exp(1j*phi)/(1.+2.*1j*Qi*(f/fr-1.)))*(a*np.exp(1j*alpha)) 
+            S21sim=S21sim_inverse
+            S21sim=np.exp(-1j*2*np.pi*f*delay)/S21sim_inverse
+            if PLOT:
+                plt.subplots()
+                plt.plot(S21sim.real,S21sim.imag,'.')
+                S21sim=1/S21sim_inverse
+                S21sim=np.exp(-1j*2*np.pi*f*delay)/S21sim_inverse
+                plt.subplots()
+                plt.plot(S21sim.real,S21sim.imag,'.')
+                
+        if REFINE:
+            print(' Refining results:')
+            for j in np.arange(num_iter):
+                if Maryland:
+                    popt, params_cov, infodict, errmsg, ier  =port._fit_entire_model_2(f,S21,fr,Qc,Ql,phi,delay=delay,a=a,alpha=alpha,b=b,maxiter=1000)
+                    fr,Qc,Ql,phi,delay,a,alpha,b = popt
+                    nS21 = port._remove_cable_delay(f,S21,-delay)#/(1+b*((f-fr)/fr))#+c*((f-fr)/fr)**2)
+        
+                if UCSB:
+                    popt, params_cov, infodict, errmsg, ier  =port._fit_entire_model_3(f,S21,fr,Qc,Qi,phi,delay=delay,a=a,alpha=alpha,maxiter=1000)
+                    fr,Qc,Qi,phi,delay,a,alpha = popt
+                    nS21 = port._remove_cable_delay(f,S21,-delay)     
+                    
+        if PLOT or (REFINE and i==(num_iter-1)):
             fig,ax = plt.subplots(2,1)
+            plt.suptitle('Raw data(blue dots) vs fitting(red solid line)')
             ax[0].plot(f,np.abs(S21),'.',c='b')
             ax[0].plot(f,np.abs(S21sim),'-',c='r')
             ax[1].plot(f,np.unwrap(np.angle(S21)),'.',c='b')
             ax[1].plot(f,np.unwrap(np.angle(S21sim)),'-',c='r')
-        print('Results of refitting after fitting entire model(iteration = %d'%j)
+            
         print('Qi\tQc\tQl\tfr\ta\talpha\tdelay\tphi\tb:')
-        print('%d\t%d\t%d\t%.4f\t%.6f\t%.2f\t%.2f\t%.2f\t%.2f'%(Qi,Qc,Ql,fr,a,alpha,delay,phi,b))   
+        print('%d\t%d\t%d\t%.4f\t%.6f\t%.2f\t%.2f\t%.2f\t%.2f'%(Qi,Qc,Ql,fr,a,alpha,delay,phi,b))    
+    
+     
+    
+    
