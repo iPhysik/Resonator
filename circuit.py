@@ -229,13 +229,15 @@ class notch_port(circlefit, save_load, plotting, calibration):
         return: delay, fr,Ql
         '''
 #        fr,Ql = self._fit_skewed_lorentzian_v2(f_data,z_data)
+        df = fr/Ql
+        index=int(np.average(np.where(np.abs(f_data-(fr-df))<f_data[1]-f_data[0])[0][0]))
 #        print('index',index)
         if delay is None:
             if guess==True:
-                df = fr/Ql
-                index=int(np.average(np.where(np.abs(f_data-(fr-df))<(f_data[1]-f_data[0]))[0][0]))
                 delay = self._guess_delay(f_data[:index],z_data[:index])
                 print("guess delay", delay)
+            else:
+                delay=0.
                 
         delay = self._fit_delay(f_data,z_data,fr,delay,maxiter=maxiter)
         print('get delay', delay[1])

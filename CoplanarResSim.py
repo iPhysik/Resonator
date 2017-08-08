@@ -97,7 +97,7 @@ if __name__=='__main__':
     # Aluminum feed line: 
     a=TLResonator(300e-6,180e-6,6e9,2500,1.7,0.2)        
     
-    for Rsq in [3000]:
+    for Rsq in [2200]:
         print("\nRsq = %f\n" % Rsq)
        
         Cl,Ll,Zr,lambda_ = TLResonator(w_m,s_m,freq_Hz,Rsq,Tc=2.2,T=T)
