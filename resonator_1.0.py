@@ -35,8 +35,8 @@ if __name__ == "__main__":
 
 #    fname = "4_11_2013_LCmeander2_S21vsFreq_Pmeas=-133dBm_T=20mK"  
     # set file directory and name
-    fdir = '../data/'
-    fname = fdir+"170603-ADC_InOx04_f6.06_ps500mK-123711_AeroflexCh1=40dB.dat"
+    fdir = 'D:\\temp data\\'
+    fname = fdir+"2.98GHz_30dB.dat"
     
     f,S21 = loaddata(fname)
     port = notch_port(f,S21) 
@@ -77,6 +77,7 @@ if __name__ == "__main__":
 
     #center the circle to obtain a and alpha
     zp_data=port._center(z_data,xc+1j*yc)
+    fr=f[np.where(np.abs(S21)==np.min(np.abs(S21)))[0][0]]
     theta0= np.average(np.unwrap(np.arctan2(zp_data.imag,zp_data.real))[np.where(np.abs(f_data-fr)<f[1]-f[0])])
     theta0,Ql,fr=port._phase_fit(f_data,zp_data,theta0,Ql,fr)
     print("first phase fit : theta0,Ql,fr :",theta0,Ql,fr)
