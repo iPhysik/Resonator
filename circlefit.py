@@ -65,6 +65,12 @@ class circlefit(object):
             theta0 = p
             err =self._dist(y - (theta0+2.*np.arctan(2.*Ql*(1.-x/fr))))
             return err
+        def residuals_8(p,x,y,fr):
+            theta0,Ql = p
+            err =self._dist(y - (theta0+2.*np.arctan(2.*Ql*(1.-x/fr))))
+            return err
+        p0 = [theta0,Ql]
+        p_final = spopt.leastsq(lambda p,x,y: residuals_8(p,x,y,fr),p0,args=(f_data,phase),ftol=1e-12,xtol=1e-12)
         p0 = [theta0,Ql,fr]
         p_final = spopt.leastsq(lambda p,x,y: residuals_5(p,x,y),p0,args=(f_data,phase),ftol=1e-12,xtol=1e-12)
         theta0,Ql,fr=p_final[0]
@@ -219,6 +225,7 @@ class circlefit(object):
         z_data=z_data/np.max(np.abs(z_data))
         def residuals(p,x,y,fr):
             b,phasedelay = p
+            b=0
 #            print('print : fr,phase:',fr,phasedelay)
 #            print(p)
             # take into account epsilon in https://arxiv.org/pdf/1108.3117.pdf

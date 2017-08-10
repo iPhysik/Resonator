@@ -18,7 +18,7 @@ from circuit import *
 from utilities import phase_vs_freq
 
 def loaddata(fname):
-    data = np.loadtxt(fname,skiprows=2)   
+    data = np.loadtxt(fname,skiprows=19)   
     f = data[:,2]
     mag=data[:,3]
     phase=-data[:,4]
@@ -36,7 +36,7 @@ if __name__ == "__main__":
 #    fname = "4_11_2013_LCmeander2_S21vsFreq_Pmeas=-133dBm_T=20mK"  
     # set file directory and name
     fdir = 'D:\\temp data\\'
-    fname = fdir+"2.98GHz_30dB.dat"
+    fname = fdir+"170808-ADC_InOx05_rng200mV_f3.51_30dB-162517.txt"
     
     f,S21 = loaddata(fname)
     port = notch_port(f,S21) 
@@ -48,8 +48,7 @@ if __name__ == "__main__":
     plt.subplot(211)
     plt.plot(f,np.abs(S21))
     plt.subplot(212)
-    plt.plot(f,np.angle(S21))
-    
+    plt.plot(f,np.unwrap(np.angle(S21)))
     
    # # 1st Remove electric delay ===================
     fr,Ql=port._fit_skewed_lorentzian_v2(f,S21)
@@ -66,7 +65,7 @@ if __name__ == "__main__":
     plt.suptitle('S21 delay remove before after')
     plt.plot(S21.real,S21.imag,'.-',c='b')
     plt.plot(nS21.real,nS21.imag,'.-',c='r')
-    
+
     # circle fit to extract alpha and a 
     f_data=f[:]
     z_data=nS21[:] 
@@ -78,13 +77,16 @@ if __name__ == "__main__":
     #center the circle to obtain a and alpha
     zp_data=port._center(z_data,xc+1j*yc)
     fr=f[np.where(np.abs(S21)==np.min(np.abs(S21)))[0][0]]
-    theta0= np.average(np.unwrap(np.arctan2(zp_data.imag,zp_data.real))[np.where(np.abs(f_data-fr)<f[1]-f[0])])
+#    theta0= np.average(np.unwrap(np.arctan2(zp_data.imag,zp_data.real))[np.where(np.abs(f_data-fr)<(f[1]-f[0]))[0]])
+    phase = np.unwrap(np.arctan2(zp_data.imag,zp_data.real))
+    theta0 = 0.5*(phase[0]+phase[-1])
     theta0,Ql,fr=port._phase_fit(f_data,zp_data,theta0,Ql,fr)
+    Ql=2900
     print("first phase fit : theta0,Ql,fr :",theta0,Ql,fr)
     plt.subplots()
     plt.title('phase fit results vs data')
     plt.plot(f_data,np.unwrap(np.angle(zp_data)),f_data,np.unwrap(phase_vs_freq([theta0, Ql, fr],f_data)))
-    
+
     a = np.abs(xc+r0*np.cos(theta0-np.pi)+1j*(yc+r0*np.sin(theta0-np.pi)))
     alpha = np.angle(xc+r0*np.cos(theta0-np.pi)+1j*(yc+r0*np.sin(theta0-np.pi)))
     print('a, alpha:', a, alpha)
@@ -114,10 +116,9 @@ if __name__ == "__main__":
     plt.title('plot canoncial posiiton of S21')
     plt.plot(z_data.real,z_data.imag)
     plt.xlim(-1,1),plt.ylim(-1,1)
-    
 #%%
     Qc = Ql/2/r0
-    Qi = 1./(1./Ql-1./Qc)
+    Qi = 1./(1./Ql-np.real(1./(Qc*np.exp(-1j*phi))))
 
     S21sim = a*np.exp(1j*alpha-1j*2*np.pi*f*delay)*(1-(Ql/Qc)*np.exp(1j*phi)/(1+2j*Ql*(f/fr-1)))*(1+b*(f-fr)/fr)
     fig,ax = plt.subplots(2,1)
@@ -129,9 +130,9 @@ if __name__ == "__main__":
     
     print('Qi\tQc\tQl\tfr\ta\talpha\tdelay\tphi\tb:')
     print('%d\t%d\t%d\t%.4f\t%.6f\t%.2f\t%.2f\t%.2f\t%.2f'%(Qi,Qc,Ql,fr,a,alpha,delay,phi,b))    
-    
+
     print('Start refine results:')
-    num_of_iter = 20
+    num_of_iter = 5
     for j in np.arange(num_of_iter):
         popt, params_cov, infodict, errmsg, ier  =port._fit_entire_model_2(f,S21,fr,Qc,Ql,phi,delay=delay,a=a,alpha=alpha,b=b,maxiter=1000)
         
@@ -177,11 +178,12 @@ if __name__ == "__main__":
         phi= np.arctan2(yc,xc)
         z_data=z_data*np.exp(-1j*phi)
         Qc = Ql/2/r0
-        Qi = 1./(1./Ql-1./Qc)
+        Qi = 1./(1./Ql-np.real(1./(Qc*np.exp(-1j*phi))))
     
         S21sim = a*np.exp(1j*alpha-1j*2*np.pi*f*delay)*(1-(Ql/Qc)*np.exp(1j*phi)/(1+2j*Ql*(f/fr-1)))*(1+b*(f-fr)/fr)
         if j == (num_of_iter-1):
             fig,ax = plt.subplots(2,1)
+            plt.suptitle('Qi = %d, Qc = %d, Ql = %d' %(Qi,Qc,Ql))
             ax[0].plot(f,np.abs(S21),'.',c='b')
             ax[0].plot(f,np.abs(S21sim),'-',c='r')
             ax[1].plot(f,np.unwrap(np.angle(S21)),'.',c='b')
