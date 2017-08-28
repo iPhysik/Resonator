@@ -3,7 +3,7 @@ import numpy as np
 import scipy.optimize as spopt
 from scipy import stats
 import matplotlib.pyplot as plt
-PLOT=True
+
 class circlefit(object):
     '''
     contains all the circlefit procedures
@@ -11,7 +11,7 @@ class circlefit(object):
     arxiv version: http://arxiv.org/abs/1410.3365
     '''
     def _remove_cable_delay(self,f_data,z_data, delay):
-        return z_data*np.exp(-2j*np.pi*f_data*delay)
+        return z_data/np.exp(2j*np.pi*f_data*delay)
 
     def _center(self,z_data,zc):
         return z_data-zc
@@ -23,20 +23,29 @@ class circlefit(object):
         
     def _periodic_boundary(self,x,bound):
         return np.fmod(x,bound)-np.trunc(x/bound)*bound
-        
+    def _weight(self,x,y):
+        xref = (x[0]+x[-1])/2
+        yref = (y[0]+y[-1])/2
+        res = np.sqrt((x-xref)**2+(y-yref)**2)
+#        res = res/res.max()
+        res = np.ones(x.size)
+        return res
+    
     def _phase_fit_wslope(self,f_data,z_data,theta0, Ql, fr, slope):
         phase = np.angle(z_data)
         def residuals(p,x,y):
             theta0, Ql, fr, slope = p
-            err = self._dist(y - (theta0+2.*np.arctan(2.*Ql*(1.-x/fr))-slope*x))
+            err = self._dist(y - (theta0+2.*np.arctan(2.*Ql*(1.-x/fr))-slope*(x)))
             return err
         p0 = [theta0, Ql, fr, slope]
         p_final = spopt.leastsq(residuals,p0,args=(np.array(f_data),np.array(phase)))
         return p_final[0]
     
-    def _phase_fit(self,f_data,z_data,theta0,Ql,fr):
-        phase = np.arctan2(z_data.imag,z_data.real)
-        phase = np.unwrap(phase)
+    def _phase_fit(self,f_data,z_data,theta0, Ql, fr):
+        phase = np.angle(z_data)
+#        phase = np.unwrap(phase)
+        xdat=z_data.real
+        ydat = z_data.imag
         def residuals_1(p,x,y,Ql):
             theta0, fr = p
             err = self._dist(y - (theta0+2.*np.arctan(2.*Ql*(1.-x/fr))))
@@ -56,104 +65,48 @@ class circlefit(object):
         def residuals_5(p,x,y):
             theta0, Ql, fr = p
             err = self._dist(y - (theta0+2.*np.arctan(2.*Ql*(1.-x/fr))))
+            err = err * self._weight(xdat,ydat)
             return err
-        def residuals_6(p,x,y,Ql):
-            theta0, fr=p
-            err =self._dist(y - (theta0+2.*np.arctan(2.*Ql*(1.-x/fr))))
-            return err
-        def residuals_7(p,x,y,fr,Ql):
-            theta0 = p
-            err =self._dist(y - (theta0+2.*np.arctan(2.*Ql*(1.-x/fr))))
-            return err
-        def residuals_8(p,x,y,fr):
-            theta0,Ql = p
-            err =self._dist(y - (theta0+2.*np.arctan(2.*Ql*(1.-x/fr))))
-            return err
-        p0 = [theta0,Ql]
-        p_final = spopt.leastsq(lambda p,x,y: residuals_8(p,x,y,fr),p0,args=(f_data,phase),ftol=1e-12,xtol=1e-12)
-        p0 = [theta0,Ql,fr]
-        p_final = spopt.leastsq(lambda p,x,y: residuals_5(p,x,y),p0,args=(f_data,phase),ftol=1e-12,xtol=1e-12)
-        theta0,Ql,fr=p_final[0]
-        return theta0,Ql,fr
         
+        p0 = [theta0, Ql, fr]
+        p_final = spopt.leastsq(residuals_5,p0,args=(f_data,phase))
+        return p_final[0]
     
     def _fit_skewed_lorentzian(self,f_data,z_data):
-        amplitude = np.abs(z_data)
-        amplitude = amplitude/amplitude.max()
-#        amplitude_sqr = amplitude**2 # origin
-#        amplitude_sqr = np.sqrt(amplitude)
-        amplitude_sqr = amplitude
-#        A1a = np.minimum(amplitude_sqr[0],amplitude_sqr[-1]) # Origin
-#        A3a = -np.max(amplitude_sqr) # origin
-        amp_min = 1-np.min(amplitude_sqr)
+        amplitude = np.absolute(z_data)
+        amplitude_sqr = amplitude**2
+        A1a = np.minimum(amplitude_sqr[0],amplitude_sqr[-1])
+        A3a = -np.max(amplitude_sqr)
         fra = f_data[np.argmin(amplitude_sqr)]
-#        
-        def skewed_lorentzian(x,A2,A3,A4,fra,Ql):
-            return 1-(amp_min-A3+A2*(x-fra)+(A3+A4*(x-fra))/np.sqrt(1.+4.*Ql**2*((x-fra)/fra)**2))
-
+        f = f_data
+        
         def residuals(p,x,y):
-            A2, A3, A4, fra, Ql = p
-            err = y -skewed_lorentzian(x,*p)
+            A2, A4, Ql = p
+            err = y -(A1a+A2*(x-fra)+(A3a+A4*(x-fra))/(1.+4.*Ql**2*((x-fra)/fra)**2))
             return err
-        p0 = [0., amp_min,0., fra, 1e3]
+        p0 = [0., 0., 2e3]
         p_final = spopt.leastsq(residuals,p0,args=(np.array(f_data),np.array(amplitude_sqr)))
-        A2a,A3a, A4a, fra, Qla = p_final[0]
-#        print p_final[0]
-#        def residuals2(p,x,y):
-#            A1, A2, A3, A4, fr, Ql = p
-#            err = y -(A1+A2*(x-fr)+(A3+A4*(x-fr))/(1.+4.*Ql**2*((x-fr)/fr)**2)) # Origin
-#            err = y -(amp_min-A3+A2*(x-fr)+(A3+A4*(x-fr))/(1.+4.*Ql**2*((x-fr)/fr)**2)) # Origin            
-#            return err
-            
-#        def fitfunc(x, A2, A3, A4, fr, Ql):
-#            return A1+A2*(x-fr)+(A3+A4*(x-fr))/(1.+4.*Ql**2*((x-fr)/fr)**2) # original
-#            return np.min((amplitude_sqr))-A3 + A2*(x-fr)+(A3+A4*(x-fr))/np.sqrt(1.+4.*Ql**2*((x-fr)/fr)) # Wenyuan
-                
-        p0 = [A2a , A3a, A4a, fra, Qla]
-        #p_final = spopt.leastsq(residuals2,p0,args=(np.array(f_data),np.array(amplitude_sqr)))
-        try:
-            popt, pcov = spopt.curve_fit(skewed_lorentzian, np.array(f_data), np.array(amplitude_sqr),p0=p0)
-        #A1, A2, A3, A4, fr, Ql = p_final[0]
-        #print p_final[0][5]
-            if pcov is not None:
-                self.df_error = np.sqrt(pcov[4][4])
-                self.dQl_error = np.sqrt(pcov[5][5])
-            else:
-                self.df_error = np.inf
-                self.dQl_error = np.inf
-        except:
-            popt = p0
-            self.df_error = np.inf
-            self.dQl_error = np.inf
-        #return p_final[0]
-        return popt
-    
-    def _fit_skewed_lorentzian_v2(self,f_data,z_data):
-        amplitude = np.abs(z_data)
-        amplitude = amplitude/amplitude.max()
-        amplitude = 1 - amplitude
-        fra = f_data[np.argmax(amplitude)]
-        Smax=np.max(amplitude)
+        A2a, A4a, Qla = p_final[0]
         
-        def skewed_lorentzian(x,A2,A3,fra,Ql):
-            return A2*(x-fra)+(Smax+A3*(x-fra))/np.sqrt(1.+4.*Ql**2*((x-fra)/fra)**2)
-
-        def residuals(p,x,y):
-            A2, A3, fra, Ql = p
-            err = y -skewed_lorentzian(x,*p)
+#        plt.subplots()
+#        plt.title('skewed lorentzian')
+#        plt.plot(f,amplitude_sqr, '.', f,(A1a+A2a*(f-fra)+(A3a+A4a*(f-fra))/(1.+4.*Qla**2*((f-fra)/fra)**2)) )
+        
+        def residuals2(p,x,y):
+            A1, A2, A3, A4, fr, Ql = p
+            err = y -(A1+A2*(x-fr)+(A3+A4*(x-fr))/(1.+4.*Ql**2*((x-fr)/fr)**2))
             return err
-        p0 = [0.,0., fra, 1e3]
-        p_final = spopt.leastsq(residuals,p0,args=(np.array(f_data),np.array(amplitude)))
-        A2a,A3a,fra, Qla = p_final[0]                
-        p0 = [A2a , A3a, fra, Qla]
-        if PLOT==True:
-            plt.subplots()
-            plt.title('lorenztian fit before after')
-            plt.plot(f_data,amplitude,'+',f_data,skewed_lorentzian(f_data,A2a,A3a,fra,Qla))
-        print("_fit_skewed_lorentzian: fr, Ql %f %f" % (fra,Qla))
-        return fra, Qla
+        p0 = [A1a, A2a , A3a, A4a, fra, Qla]
+        p_final = spopt.leastsq(residuals2,p0,args=(np.array(f_data),np.array(amplitude_sqr)))
+        A1, A2, A3, A4, fr, Ql = p_final[0]
+        #print p_final[0][5]
         
-    def _fit_circle(self,z_data,refine_results=False):
+        plt.subplots()
+        plt.title('skewed lorentzian')
+        plt.plot(f,amplitude_sqr, '.', f,(A1+A2*(f-fr)+(A3+A4*(f-fr))/(1.+4.*Ql**2*((f-fr)/fr)**2)) )
+        return p_final[0]
+    
+    def _fit_circle(self,z_data, refine_results=False):
         def calc_moments(z_data):
             xi = z_data.real
             xi_sqr = xi*xi
@@ -204,15 +157,12 @@ class circlefit(object):
         yc = -A_vec[2]/(2.*A_vec[0])
         # the term *sqrt term corrects for the constraint, because it may be altered due to numerical inaccuracies during calculation
         r0 = 1./(2.*np.absolute(A_vec[0]))*np.sqrt(A_vec[1]*A_vec[1]+A_vec[2]*A_vec[2]-4.*A_vec[0]*A_vec[3])
-       # print('_fit_circle before refine:',xc,yc,r0)
-
         if refine_results:
-#            print "agebraic r0: " + str(r0)
+            print ("agebraic r0: " + str(r0))
             xc,yc,r0 = self._fit_circle_iter(z_data, xc, yc, r0)
-#            print('_fit_circle_iter:',xc,yc,r0)
             r0 = self._fit_circle_iter_radialweight(z_data, xc, yc, r0)
-#            print('_fit_circle_iter_radialweight:',r0)
-#            print "iterative r0: " + str(r0)
+#            r0 = self._fit_circle_iter_radialweight(z_data, ((z_data[0]+z_data[-1])/2).real, ((z_data[0]+z_data[-1])/2).imag, r0)
+            print ("iterative r0: " + str(r0))
         return xc, yc, r0
 
     def _guess_delay(self,f_data,z_data):
@@ -221,21 +171,41 @@ class circlefit(object):
         return gradient*(-1.)/(np.pi*2.)
     
     
-    def _fit_delay(self,f_data,z_data,fr,delay,maxiter=0):
-        z_data=z_data/np.max(np.abs(z_data))
-        def residuals(p,x,y,fr):
-            b,phasedelay = p
-            b=0
-#            print('print : fr,phase:',fr,phasedelay)
-#            print(p)
-            # take into account epsilon in https://arxiv.org/pdf/1108.3117.pdf
-            z_data_temp = y*np.exp(1j*(2.*np.pi*phasedelay*x))/(1+b*((x-fr)/fr))#+c*((x-fr)/fr)**2)
-            xc,yc,r0 = self._fit_circle(z_data_temp,refine_results=False)
-            err = np.sqrt(((z_data_temp.real-xc)**2+(z_data_temp.imag-yc)**2))-r0
+    def _fit_delay(self,f_data,z_data,delay=0.,maxiter=0):
+        def residuals(p,x,y):
+            phasedelay = p
+            z_data_temp = y*np.exp(1j*(2.*np.pi*phasedelay*x))
+            xc,yc,r0 = self._fit_circle(z_data_temp)
+            err = np.sqrt((z_data_temp.real-xc)**2+(z_data_temp.imag-yc)**2)-r0
             return err
-        p0=[0,delay]
-        p_final = spopt.leastsq(residuals,p0,args=(f_data,z_data,fr),maxfev=maxiter,ftol=1e-20,xtol=1e-20)
-        print('_fit_delay:',p_final[0])
+        p_final = spopt.leastsq(residuals,delay,args=(f_data,z_data),maxfev=maxiter,ftol=1e-12,xtol=1e-12)
+        return p_final[0][0]
+    
+    def _fit_delay_and_linear_var_in_S21(self,f_data,z_data,fr,delay=0,alpha=0,maxiter=0):
+        """
+        reference : supplementary material Appl. Phys. Lett. 106, 182601 (2015)
+        """
+        def residuals_1(p,x,y):
+            alpha, phasedelay = p
+            z_data_temp = y*np.exp(1j*(2.*np.pi*phasedelay*x))/(1+alpha*(x/fr-1))
+            xc,yc,r0 = self._fit_circle(z_data_temp)
+            err = np.sqrt((z_data_temp.real-xc)**2+(z_data_temp.imag-yc)**2)-r0
+            return err
+        
+        def residuals_2(p,x,y):
+            alpha = p
+            z_data_temp = y*np.exp(1j*(2.*np.pi*delay*x))/(1+alpha*(x/fr-1))
+            xc,yc,r0 = self._fit_circle(z_data_temp)
+            err = np.sqrt((z_data_temp.real-xc)**2+(z_data_temp.imag-yc)**2)-r0
+            return err
+        
+        p_init = [alpha]
+        p_final = spopt.leastsq(residuals_2,p_init,args=(f_data,z_data),maxfev=maxiter,ftol=1e-12,xtol=1e-12)
+#        alpha = p_final[0][0]
+
+#        p_init = [alpha,delay]
+#        p_final = spopt.leastsq(residuals_1,p_init,args=(f_data,z_data),maxfev=1000,ftol=1e-12,xtol=1e-12)
+#        print(p_final)
         return p_final[0]
     
     def _fit_delay_alt_bigdata(self,f_data,z_data,delay=0.,maxiter=0):
@@ -264,49 +234,31 @@ class circlefit(object):
             return err
         p0 = [fr,absQc,Ql,phi0,delay,a,alpha]
         (popt, params_cov, infodict, errmsg, ier) = spopt.leastsq(residuals,p0,args=(np.array(f_data),np.array(z_data)),full_output=True,maxfev=maxiter)
-#        len_ydata = len(np.array(f_data))
-#        if (len_ydata > len(p0)) and params_cov is not None:  #p_final[1] is cov_x data  #this caculation is from scipy curve_fit routine - no idea if this works correctly...
-#            s_sq = (funcsqr(popt, np.array(f_data))).sum()/(len_ydata-len(p0))
-#            params_cov = params_cov * s_sq
-#        else:
-#            params_cov = np.inf
+        len_ydata = len(np.array(f_data))
+        if (len_ydata > len(p0)) and params_cov is not None:  #p_final[1] is cov_x data  #this caculation is from scipy curve_fit routine - no idea if this works correctly...
+            s_sq = (funcsqr(popt, np.array(f_data))).sum()/(len_ydata-len(p0))
+            params_cov = params_cov * s_sq
+        else:
+            params_cov = np.inf
         return popt, params_cov, infodict, errmsg, ier
     
-    def _fit_entire_model_2(self,f_data,z_data,fr,Qc,Ql,phi,delay,a=1.,alpha=0.,b=0.,maxiter=0):
-        '''
-        fits the whole model: (1+b*(f-fr)/fr)a*exp(i*alpha)*exp(-2*pi*i*f*delay) * [ 1 - {Ql/Qc*exp(i*phi0)} / {1+2*i*Ql*(f-fr)/fr} ]
-        '''
-#        def funcsqr(p,x):
-#            fr,absQc,Ql,phi0,delay,a,alpha = p
-#            return np.array([np.absolute( ( (1+b*(f-fr)/fr)*a*np.exp(np.complex(0,alpha))*np.exp(np.complex(0,-2.*np.pi*delay*x[i])) * ( 1 - (Ql/absQc*np.exp(np.complex(0,phi0)))/(np.complex(1,2*Ql*(x[i]-fr)/fr)) )  ) )**2 for i in range(len(x))])
-        def residuals(p,x,y):
-            fr,absQc,Ql,phi0,delay,a,alpha,b = p
-            err = [np.absolute( y[i] - ( a*(1+b*(x[i]-fr)/fr)*np.exp(np.complex(0,alpha))*np.exp(np.complex(0,-2.*np.pi*delay*x[i])) * ( 1 - (Ql/absQc*np.exp(np.complex(0,phi0)))/(np.complex(1,2*Ql*(x[i]-fr)/fr)) )  ) ) for i in range(len(x))]
-            return np.array(err)
-            
-        p0 = [fr,Qc,Ql,phi,delay,a,alpha,b]
-        (popt, params_cov, infodict, errmsg, ier) = spopt.leastsq(residuals,p0,args=(np.array(f_data),np.array(z_data)),full_output=True,maxfev=maxiter)
-#        len_ydata = len(np.array(f_data))
-#        if (len_ydata > len(p0)) and params_cov is not None:  #p_final[1] is cov_x data  #this caculation is from scipy curve_fit routine - no idea if this works correctly...
-#            s_sq = (funcsqr(popt, np.array(f_data))).sum()/(len_ydata-len(p0))
-#            params_cov = params_cov * s_sq
-#        else:
-#            params_cov = np.inf
-#        print(popt)
-        return popt, params_cov, infodict, errmsg, ier
-        
+    #
+    
     def _optimizedelay(self,f_data,z_data,Ql,fr,maxiter=4):
         xc,yc,r0 = self._fit_circle(z_data)
         z_data = self._center(z_data,np.complex(xc,yc))
+#        plt.subplots()
+#        plt.title('optimize delay')
+#        plt.plot(f_data,np.angle(z_data))
         theta, Ql, fr, slope = self._phase_fit_wslope(f_data,z_data,0.,Ql,fr,0.)
         delay = 0.
         for i in range(maxiter-1): #interate to get besser phase delay term
-            delay = delay - slope/(2.*2.*np.pi)
+            delay = delay - slope/(2.*np.pi)
             z_data_corr = self._remove_cable_delay(f_data,z_data,delay)
             xc, yc, r0 = self._fit_circle(z_data_corr)
             z_data_corr2 = self._center(z_data_corr,np.complex(xc,yc))
             theta0, Ql, fr, slope = self._phase_fit_wslope(f_data,z_data_corr2,0.,Ql,fr,0.)
-        delay = delay - slope/(2.*2.*np.pi)  #start final interation
+        delay = delay - slope/(2.*np.pi)  #start final interation
         return delay
     
     def _fit_circle_iter(self,z_data, xc, yc, rc):
@@ -319,19 +271,34 @@ class circlefit(object):
         this works, because the center of the circle is usually much less
         corrupted by noise than the radius
         '''
+#        xdat = z_data.real
+#        ydat = z_data.imag
+#        def fitfunc(x,y,xc,yc):
+#            return np.sqrt((x-xc)**2+(y-yc)**2)
+#        def residuals(p,x,y):
+#            xc,yc,r = p
+#            temp = (r-fitfunc(x,y,xc,yc))
+#            return temp
+#        p0 = [xc,yc,rc]
+#        p_final = spopt.leastsq(residuals,p0,args=(xdat,ydat))
+#        xc,yc,rc = p_final[0]
+#        return xc,yc,rc
+        
         xdat = z_data.real
         ydat = z_data.imag
         def fitfunc(x,y,xc,yc):
             return np.sqrt((x-xc)**2+(y-yc)**2)
+      
         def residuals(p,x,y):
             xc,yc,r = p
-            temp = (r-fitfunc(x,y,xc,yc))
+            temp = (r-fitfunc(x,y,xc,yc))*self._weight(xdat,ydat)
             return temp
+        
         p0 = [xc,yc,rc]
         p_final = spopt.leastsq(residuals,p0,args=(xdat,ydat))
         xc,yc,rc = p_final[0]
-        return xc,yc,rc
-    
+        return xc,yc,rc    
+
     def _fit_circle_iter_radialweight(self,z_data, xc, yc, rc):
         '''
         this is the radial weighting procedure
@@ -346,15 +313,20 @@ class circlefit(object):
         ydat = z_data.imag
         def fitfunc(x,y):
             return np.sqrt((x-xc)**2+(y-yc)**2)
+#        def weight(x,y):
+#            try:
+#                res = 1./np.sqrt((xc-x)**2+(yc-y)**2)
+#            except:
+#                res = 1.
+#            return res
         def weight(x,y):
-            try:
-                res =1/np.sqrt((x-xc)**2+(y-yc)**2)
-            except:
-                res = 1.
-            return res
+            xref = (x[0]+x[-1])/2
+            yref = (y[0]+y[-1])/2
+            res = ((x-xref)**2+(y-yref)**2)
+            return res/res.max()
         def residuals(p,x,y):
             r = p[0]
-            temp = (r-fitfunc(x,y))*weight(x,y)
+            temp = (r-fitfunc(x,y))*self._weight(xdat,ydat)
             return temp
         p0 = [rc]
         p_final = spopt.leastsq(residuals,p0,args=(xdat,ydat))
@@ -365,7 +337,7 @@ class circlefit(object):
         wrapper for get_cov, only gives the errors and chisquare
         '''
         chisqr, cov = self._get_cov(residual,xdata,ydata,fitparams)
-        if cov is not None:
+        if cov!=None:
             errors = np.sqrt(np.diagonal(cov))
         else:
             errors = None

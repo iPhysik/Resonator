@@ -1,9 +1,10 @@
 import warnings
 import numpy as np
 import matplotlib.pyplot as plt
+
 def phase_vs_freq(params,f_data):
     theta0, Ql, fr=params
-    return theta0+2*np.arctan(Ql*(1-f_data/fr))
+    return theta0+2*np.arctan(2*Ql*(1-f_data/fr))
 
 def Watt2dBm(x):
     '''

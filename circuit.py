@@ -2,7 +2,6 @@ import warnings
 import numpy as np
 import scipy.optimize as spopt
 from scipy.constants import hbar
-from scipy.interpolate import splrep, splev
 
 from utilities import plotting, save_load, Watt2dBm, dBm2Watt
 from circlefit import circlefit
@@ -29,7 +28,6 @@ class reflection_port(circlefit, save_load, plotting, calibration):
             self.z_data_raw = np.array(z_data_raw)
         else:
             self.z_data=None
-        self.phasefitsmooth = 3
     
     def _S11(self,f,fr,k_c,k_i):
         '''
@@ -51,26 +49,11 @@ class reflection_port(circlefit, save_load, plotting, calibration):
         maxval = np.max(np.absolute(z_data))
         z_data = z_data/maxval
         A1, A2, A3, A4, fr, Ql = self._fit_skewed_lorentzian(f_data,z_data)
-        if self.df_error/fr > 0.0001 or self.dQl_error/Ql>0.1:
-            #print "WARNING: Calibration using Lorentz fit failed, trying phase fit..."
-            A1 = np.mean(np.absolute(z_data))
-            A2 = 0.
-            A3 = 0.
-            A4 = 0.
-            #fr = np.mean(f_data)
-            f = splrep(f_data,np.unwrap(np.angle(z_data)),k=5,s=self.phasefitsmooth)
-            fr = f_data[np.argmax(np.absolute(splev(f_data,f,der=1)))]
-            Ql = 1e4
         if ignoreslope==True:
-            A2 = 0.
+            A2 = 0
         else:
-            A2 = 0.
-#            print "WARNING: The ignoreslope option is ignored! Corrections to the baseline should be done manually prior to fitting."
-           # print "see also: resonator_tools.calibration.fit_baseline_amp() etc. for help on fitting the baseline."
-         #   print "There is also an example ipython notebook for using this function."
-          #  print "However, make sure to understand the impact of the baseline (parasitic coupled resonances etc.) on your system."
-            #z_data = (np.absolute(z_data)-A2*(f_data-fr)) * np.exp(np.angle(z_data)*1j)  #usually not necessary
-        if delay is None:
+            z_data = (np.sqrt(np.absolute(z_data)**2-A2*(f_data-fr))) * np.exp(np.angle(z_data)*1j)  #usually not necessary
+        if delay==None:
             if guess==True:
                 delay = self._guess_delay(f_data,z_data)
             else:
@@ -79,12 +62,12 @@ class reflection_port(circlefit, save_load, plotting, calibration):
         params = [A1, A2, A3, A4, fr, Ql]
         return delay, params 
     
-    def do_calibration(self,f_data,z_data,ignoreslope=True,guessdelay=True,fixed_delay=None):
+    def do_calibration(self,f_data,z_data,ignoreslope=True,guessdelay=True):
         '''
         calculating parameters for normalization
         '''
-        delay, params = self.get_delay(f_data,z_data,ignoreslope=ignoreslope,guess=guessdelay,delay=fixed_delay)
-        z_data = (z_data-params[1]*(f_data-params[4]))*np.exp(2.*1j*np.pi*delay*f_data)
+        delay, params = self.get_delay(f_data,z_data,ignoreslope=ignoreslope,guess=guessdelay)
+        z_data = np.sqrt(np.absolute(z_data)**2-params[1]*(f_data-params[4]))*np.exp(2.*1j*np.pi*delay*f_data)*np.exp(1j*np.angle(z_data))
         xc, yc, r0 = self._fit_circle(z_data)
         zc = np.complex(xc,yc)
         fitparams = self._phase_fit(f_data,self._center(z_data,zc),0.,np.absolute(params[5]),params[4])
@@ -101,15 +84,15 @@ class reflection_port(circlefit, save_load, plotting, calibration):
         '''
         transforming resonator into canonical position
         '''
-        return (z_data-A2*(f_data-frcal))/amp_norm*np.exp(1j*(-alpha+2.*np.pi*delay*f_data))
+        return (np.sqrt(np.absolute(z_data)**2-A2*(f_data-frcal)))/amp_norm*np.exp(1j*(-alpha+2.*np.pi*delay*f_data))*np.exp(1j*np.angle(z_data))
     
     def circlefit(self,f_data,z_data,fr=None,Ql=None,refine_results=False,calc_errors=True):
         '''
         S11 version of the circlefit
         '''
     
-        if fr is None: fr=f_data[np.argmin(np.absolute(z_data))]
-        if Ql is None: Ql=1e6
+        if fr==None: fr=f_data[np.argmin(np.absolute(z_data))]
+        if Ql==None: Ql=1e6
         xc, yc, r0 = self._fit_circle(z_data,refine_results=refine_results)
         phi0 = -np.arcsin(yc/r0)
         theta0 = self._periodic_boundary(phi0+np.pi,np.pi)
@@ -149,12 +132,12 @@ class reflection_port(circlefit, save_load, plotting, calibration):
         return results
         
     
-    def autofit(self,electric_delay=None):
+    def autofit(self):
         '''
         automatic calibration and fitting
         '''
         delay, amp_norm, alpha, fr, Ql, A2, frcal =\
-                self.do_calibration(self.f_data,self.z_data_raw,ignoreslope=True,guessdelay=False,fixed_delay=electric_delay)
+                self.do_calibration(self.f_data,self.z_data_raw,ignoreslope=True,guessdelay=False)
         self.z_data = self.do_normalization(self.f_data,self.z_data_raw,delay,amp_norm,alpha,A2,frcal)
         self.fitresults = self.circlefit(self.f_data,self.z_data,fr,Ql,refine_results=False,calc_errors=True)
         self.z_data_sim = A2*(self.f_data-frcal)+self._S11_directrefl(self.f_data,fr=self.fitresults["fr"],Ql=self.fitresults["Ql"],Qc=self.fitresults["Qc"],a=amp_norm,alpha=alpha,delay=delay)
@@ -173,8 +156,8 @@ class reflection_port(circlefit, save_load, plotting, calibration):
         '''
         if self.fitresults!={}:
             fr = self.fitresults['fr']
-            k_c = 2*np.pi*fr/self.fitresults['Qc']
-            k_i = 2*np.pi*fr/self.fitresults['Qi']
+            k_c = fr/self.fitresults['Qc']
+            k_i = fr/self.fitresults['Qi']
             if unit=='dBm':
                 return Watt2dBm(1./(4.*k_c/(2.*np.pi*hbar*fr*(k_c+k_i)**2)))
             elif unit=='watt':
@@ -194,8 +177,8 @@ class reflection_port(circlefit, save_load, plotting, calibration):
             if unit=='dBm':
                 power = dBm2Watt(power)
             fr = self.fitresults['fr']
-            k_c = 2*np.pi*fr/self.fitresults['Qc']
-            k_i = 2*np.pi*fr/self.fitresults['Qi']
+            k_c = fr/self.fitresults['Qc']
+            k_i = fr/self.fitresults['Qi']
             return 4.*k_c/(2.*np.pi*hbar*fr*(k_c+k_i)**2) * power
         else:
             warnings.warn('Please perform the fit first',UserWarning)
@@ -218,31 +201,27 @@ class notch_port(circlefit, save_load, plotting, calibration):
         else:
             self.z_data_raw=None
     
-    def get_delay(self,f_data,z_data,fr,Ql,delay=None,guess=True,maxiter=10000):
+    def get_delay(self,f_data,z_data,delay=None,ignoreslope=True,guess=True):
         '''
-        locate resonance frequency using skewed lorentzian
-        use the located resonance to define a certain frequency range used for guess_delay, which is a frequency below the resonane to avoid phase jump and keep in the linear regime
         retrieves the cable delay assuming the ideal resonance has a circular shape
         modifies the cable delay until the shape Im(S21) vs Re(S21) is circular
         see "do_calibration"
-        
-        return: delay, fr,Ql
         '''
-#        fr,Ql = self._fit_skewed_lorentzian_v2(f_data,z_data)
-        df = fr/Ql
-        index=int(np.average(np.where(np.abs(f_data-(fr-df))<f_data[1]-f_data[0])[0][0]))
-#        print('index',index)
-        if delay is None:
+        maxval = np.max(np.absolute(z_data))
+        z_data = z_data/maxval
+        A1, A2, A3, A4, fr, Ql = self._fit_skewed_lorentzian(f_data,z_data)
+        if ignoreslope==True:
+            A2 = 0
+        else:
+            z_data = (np.absolute(z_data)-A2*(f_data-fr)) * np.exp(np.angle(z_data)*1j)  #usually not necessary
+        if delay==None:
             if guess==True:
-                delay = self._guess_delay(f_data[:index],z_data[:index])
-                print("guess delay", delay)
+                delay = self._guess_delay(f_data,z_data)
             else:
                 delay=0.
-                
-        delay = self._fit_delay(f_data,z_data,fr,delay,maxiter=maxiter)
-        print('get delay', delay[1])
-
-        return delay
+            delay = self._fit_delay(f_data,z_data,delay,maxiter=200)
+        params = [A1, A2, A3, A4, fr, Ql]
+        return delay, params    
     
     def do_calibration(self,f_data,z_data,ignoreslope=True,guessdelay=True):
         '''
@@ -251,34 +230,26 @@ class notch_port(circlefit, save_load, plotting, calibration):
         see also "do_normalization"
         the calibration procedure works for transmission line resonators as well
         '''
-        
         delay, params = self.get_delay(f_data,z_data,ignoreslope=ignoreslope,guess=guessdelay)
-        Ql,fr = params[3],params[4]
-#        z_data = (z_data-params[1]*(f_data-params[4]))*np.exp(2.*1j*np.pi*delay*f_data) # original
-        z_data = self._remove_cable_delay(f_data,z_data,-delay)
+        z_data = (z_data-params[1]*(f_data-params[4]))*np.exp(2.*1j*np.pi*delay*f_data)
         xc, yc, r0 = self._fit_circle(z_data)
         zc = np.complex(xc,yc)
-        
-        fitparams = self._phase_fit(f_data,self._center(z_data,zc), Ql, fr)
-      #  print(fitparams)
-        
+        fitparams = self._phase_fit(f_data,self._center(z_data,zc),0.,np.absolute(params[5]),params[4])
         theta, Ql, fr = fitparams
         beta = self._periodic_boundary(theta+np.pi,np.pi)
         offrespoint = np.complex((xc+r0*np.cos(beta)),(yc+r0*np.sin(beta)))
         alpha = np.angle(offrespoint)
         a = np.absolute(offrespoint)
-        return delay, a, alpha, fr, Ql, params[0], params[3]
+        return delay, a, alpha, fr, Ql, params[1], params[4]
     
     def do_normalization(self,f_data,z_data,delay,amp_norm,alpha,A2,frcal):
         '''
         removes the prefactors a, alpha, delay and returns the calibrated data, see also "do_calibration"
         works also for transmission line resonators
         '''
-#        return (z_data-A2*(f_data-frcal))/amp_norm*np.exp(1j*(-alpha+2.*np.pi*delay*f_data)) # origin
-        return z_data/amp_norm*np.exp(1j*(-alpha+2.*np.pi*delay*f_data)) # wENYUAN
-        
+        return (z_data-A2*(f_data-frcal))/amp_norm*np.exp(1j*(-alpha+2.*np.pi*delay*f_data))
 
-    def circlefit(self,f_data,z_data,fr=None,Ql=None,refine_results=False,calc_errors=True):
+    def circlefit(self,f_data,z_data,fr=None,Ql=None,refine_results=False,calc_errors=True, m =100):
         '''
         performs a circle fit on a frequency vs. complex resonator scattering data set
         Data has to be normalized!!
@@ -297,19 +268,16 @@ class notch_port(circlefit, save_load, plotting, calibration):
         also, check out [5] S. Probst et al. "Efficient and reliable analysis of noisy complex scatterung resonator data for superconducting quantum circuits" (in preparation)
         '''
     
-        if fr is None: fr=f_data[np.argmin(np.absolute(z_data))]
-        if Ql is None: Ql=1e6
-#        print "in circlefit fr, Ql %f %f" % (fr,Ql)
+        if fr==None: fr=f_data[np.argmin(np.absolute(z_data))]
+        if Ql==None: Ql=1e6
         xc, yc, r0 = self._fit_circle(z_data,refine_results=refine_results)
-#        print "circlefit center %f %f %f" %(xc,yc,r0)
         phi0 = -np.arcsin(yc/r0)
         theta0 = self._periodic_boundary(phi0+np.pi,np.pi)
         z_data_corr = self._center(z_data,np.complex(xc,yc))
         theta0, Ql, fr = self._phase_fit(f_data,z_data_corr,theta0,Ql,fr)
-#        print "fit again in circlefit fr, Ql %f %f" % (fr,Ql)
         #print "Ql from phasefit is: " + str(Ql)
         absQc = Ql/(2.*r0)
-        complQc = absQc*np.exp(1j*((-1.)*phi0))
+        complQc = absQc*np.exp(1j*((1.)*phi0))
         Qc = 1./(1./complQc).real   # here, taking the real part of (1/complQc) from diameter correction method
         Qi_dia_corr = 1./(1./Ql-1./Qc)
         Qi_no_corr = 1./(1./Ql-1./absQc)
@@ -338,7 +306,10 @@ class notch_port(circlefit, save_load, plotting, calibration):
                 err1 = ( (dQl**2*cov[2][2]) + (dabsQc**2*cov[1][1]) + (dphi0**2*cov[3][3]) )
                 err2 = ( dQl*dabsQc*cov[2][1] + dQl*dphi0*cov[2][3] + dabsQc*dphi0*cov[1][3] )
                 Qi_dia_corr_err =  np.sqrt(err1+2*err2)  # including correlations
-                errors = {"phi0_err":phi0_err, "Ql_err":Ql_err, "absQc_err":absQc_err, "fr_err":fr_err,"chi_square":chi_square,"Qi_no_corr_err":Qi_no_corr_err,"Qi_dia_corr_err": Qi_dia_corr_err}
+                errors = {"phi0_err":phi0_err, "Ql_err":Ql_err, "absQc_err":absQc_err, "fr_err":fr_err,"residue":chi_square,"Qi_no_corr_err":Qi_no_corr_err,"Qi_dia_corr_err": Qi_dia_corr_err,"chi_square_": chi_square/self.measurement_error_estimate(z_data,m)}
+                # "chi_square" assumes measurement deviation squared equals 1
+                # "chi_squre_" estimates measurement error from the mean distance between two adjacent data points of the first m data points
+                
                 results.update( errors )
             else:
                 print("WARNING: Error calculation failed!")
@@ -350,6 +321,12 @@ class notch_port(circlefit, save_load, plotting, calibration):
             results.update(errors)
     
         return results
+    def measurement_error_estimate(self,z_data,m):
+        z = z_data[0:m+1]
+        z_diff = np.diff(z_data)
+        
+        return (np.absolute(z_diff)**2).sum()/(2* z_diff.size)
+        
         
     def autofit(self):
         '''
@@ -374,13 +351,15 @@ class notch_port(circlefit, save_load, plotting, calibration):
         unit can be 'dBm' or 'watt'
         '''
         if self.fitresults!={}:
-            fr = self.fitresults['fr']
-            k_c = 2*np.pi*fr/self.fitresults['absQc']
-            k_i = 2*np.pi*fr/self.fitresults['Qi_dia_corr']
+            fr = self.fitresults['fr'] * 1e9
+            k_c = fr/self.fitresults['absQc']
+            k_i = fr/self.fitresults['Qi_dia_corr']
+#            power = 1./(4.*k_c/(2.*np.pi*hbar*fr*(k_c+k_i)**2)) 
+            power = hbar * (2*np.pi*fr)**2 * self.fitresults['Qc_dia_corr']/2/self.fitresults['Ql']**2
             if unit=='dBm':
-                return Watt2dBm(1./(4.*k_c/(2.*np.pi*hbar*fr*(k_c+k_i)**2)))
+                return Watt2dBm(power)
             elif unit=='watt':
-                return 1./(4.*k_c/(2.*np.pi*hbar*fr*(k_c+k_i)**2))                
+                return power
         else:
             warnings.warn('Please perform the fit first',UserWarning)
             return None
@@ -394,10 +373,13 @@ class notch_port(circlefit, save_load, plotting, calibration):
         if self.fitresults!={}:
             if unit=='dBm':
                 power = dBm2Watt(power)
-            fr = self.fitresults['fr']
-            k_c = 2*np.pi*fr/self.fitresults['Qc']
-            k_i = 2*np.pi*fr/self.fitresults['Qi']
-            return 4.*k_c/(2.*np.pi*hbar*fr*(k_c+k_i)**2) * power
+#            fr = self.fitresults['fr']
+#            k_c = fr/self.fitresults['Qc']
+#            k_i = fr/self.fitresults['Qi']
+#            return 4.*k_c/(2.*np.pi*hbar*fr*(k_c+k_i)**2) * power
+
+            return 2/(hbar*(2*np.pi*self.fitresults['fr']*1e9)**2) * self.fitresults['Ql']**2 / self.fitresults['Qc_dia_corr'] * power
+        
         else:
             warnings.warn('Please perform the fit first',UserWarning)
             return None   
@@ -410,11 +392,11 @@ class transmission_port(circlefit,save_load,plotting):
     def __init__(self,f_data=None,z_data_raw=None):
         self.porttype = 'transm'
         self.fitresults = {}
-        if f_data is not None:
+        if f_data!=None:
             self.f_data = np.array(f_data)
         else:
             self.f_data=None
-        if z_data_raw is not None:
+        if z_data_raw!=None:
             self.z_data_raw = np.array(z_data_raw)
         else:
             self.z_data=None
