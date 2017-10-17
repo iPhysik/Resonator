@@ -28,15 +28,15 @@ def coplanar(w,s,epsilon_eff):
     C = 4* const.epsilon_0 * epsilon_eff * ellipk(k0)/ellipk(k0_)
     L = const.mu_0 /4 *ellipk(k0_) / ellipk(k0)
     return C, L    
-
-def WaveLength(freq, Ll, Cl):
+def phase_velocity(Ll,Cl):
+    return 1/np.sqrt(Ll*Cl)
+    
+def WaveLength(freq, vp):
     """
         ref : Wallraff, Coplanar WG resonator
     """
-    return 1/(freq*sqrt(Ll*Cl))
+    return vp/freq
 #    return const.speed_of_light/freq*np.sqrt(2/(1+11.86))
-def func_frequency(wavelength,Ll,Cl):
-    return 1/wavelength/sqrt(Ll*Cl)
 
 def CouplingC(length,Ll,Cl,freq_Hz,Qint,g,Zr,option):
     """
@@ -80,38 +80,67 @@ def TLResonator(w,s,freq_Hz,Rsq,Tc,T):
     Lk = L_k(w,Rsq,Tc,T) # kinetic inductance per unit lenght
     Ll = Lk + Lg
     Zr = sqrt(Ll/Cl)
-    lambda_ = WaveLength(freq_Hz,Ll,Cl)
+    vp = phase_velocity(Ll,Cl)
+    lambda_ = WaveLength(freq_Hz,vp)
     print(" Geometric L: %.4g H \n Kinetic L : %.4g H\n Ratio K/G %.2f \n" %(Lg,Lk,Lk/Lg))
     print("TL line impedance Zr = %.4g Ohm" % Zr)
     print("wave length lambda_ = %.4g um" % (lambda_/1.e-6))
     return Cl,Ll,Zr,lambda_
     
 if __name__=='__main__':
+    # Qint: internal Q
+    # Qe : coupling Q
     Qint = 10e3
-#    Tc_K= 1.7
-    T = 0.08 # base temperature
-    freq_Hz = 3e9 #Hz
+    T_K = 0.08 # base temperature
+    freq_Hz_list = np.linspace(3e9,6e9,5) #Hz
     w_m= 10 * 1e-6 #m, width of coplanar line
     s_m = 6 * 1e-6 #m, gap of coplanar line
-    g =1
+    g =1 # g = Qint/Qe
     # Aluminum feed line: 
-    a=TLResonator(300e-6,180e-6,6e9,2500,1.7,0.2)        
+#    a=TLResonator(w=300e-6,s=180e-6,freq_Hz=6e9,Rsq=1,Tc=1.7,T=0.8) 
+    Quarterwave,Halfwave = [True,False]#[::-1]
     
-    for Rsq in [2200]:
-        print("\nRsq = %f\n" % Rsq)
-       
-        Cl,Ll,Zr,lambda_ = TLResonator(w_m,s_m,freq_Hz,Rsq,Tc=2.2,T=T)
-        half_wavelength = [686,610,549,499,457,422,392,366]
-        wavelength = np.array(half_wavelength)*1e-6*2
-        frequency = func_frequency(wavelength,Ll,Cl)/1e9
-        print('Lsq %.0fpH'%(w_m*Ll*1e12))
-#    print(frequency)
-        # quarter wave length 
-     #   length = lambda_/4
-      #  Cc_q = CouplingC(length,Ll,Cl,freq_Hz,Qint,g,Zr,'Q')
+    # calculating resonator length given resonant frequency
+    if False:
+        resonator_length_um=[]
+        coupler_cap_pH=[]
+        for Rsq in [1153]:
+            print("\nRsq = %f\n" % Rsq)
+            for freq_Hz in freq_Hz_list:
+                Cl,Ll,Zr,lambda_ = TLResonator(w_m,s_m,freq_Hz,Rsq,Tc=2.2,T=T)
+    #            half_wavelength = [686,610,549,499,457,422,392,366]
+    #            wavelength = np.array(half_wavelength)*1e-6*2
+        #        frequency = func_frequency(wavelength,Ll,Cl)/1e9
+        #        print('Lsq %.0fpH'%(w_m*Ll*1e12))
+        #    print(frequency)
+                if Quarterwave:
+                    length = lambda_/4.
+                    Cc = CouplingC(length,Ll,Cl,freq_Hz,Qint,g,Zr,'Q')
+                
+                if Halfwave:
+                    length = lambda_/2.
+                    Cc = CouplingC(length,Ll,Cl,freq_Hz,Qint,g,Zr,'H')
+                
+                resonator_length_um.append(length*1e6)
+                coupler_cap_pH.append(Cc*1e12)
+            
+            results = np.vstack((freq_Hz_list, resonator_length_um, coupler_cap_pH))
+            results = np.transpose(results)
+            print(results)
         
-        
-#        length = lambda_/2
-#        Cc_h = CouplingC(length,Ll,Cl,freq_Hz,Qint,g,Zr,'H')
-        
-    #Cl,Ll,Zr,lambda_ = TLResonator(60e-6,10e-6,freq_Hz,250,Tc,T)
+    # calculating resonant frequency given length
+    else:
+        for Rsq in [1153]:
+            print("\nRsq = %f\n" % Rsq)
+            Cl,Ll,Zr,lambda_ = TLResonator(w_m,s_m,freq_Hz,Rsq,Tc=2.2,T=T)
+            vp = phase_velocity(Ll,Cl)
+            halfwave_resonator_length_um = np.array([686,610,549,499,457,422,392,366])
+            wavelength = 2*halfwave_resonator_length_um*1e-6 
+            frequency_list=[]
+            for length in wavelength:
+                frequency = vp/length/1e9
+                frequency_list.append(frequency)
+                
+            results = np.vstack((halfwave_resonator_length_um,frequency_list))
+            results = np.transpose(results)
+            print(results)

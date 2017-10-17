@@ -306,7 +306,9 @@ class notch_port(circlefit, save_load, plotting, calibration):
                 err1 = ( (dQl**2*cov[2][2]) + (dabsQc**2*cov[1][1]) + (dphi0**2*cov[3][3]) )
                 err2 = ( dQl*dabsQc*cov[2][1] + dQl*dphi0*cov[2][3] + dabsQc*dphi0*cov[1][3] )
                 Qi_dia_corr_err =  np.sqrt(err1+2*err2)  # including correlations
-                errors = {"phi0_err":phi0_err, "Ql_err":Ql_err, "absQc_err":absQc_err, "fr_err":fr_err,"residue":chi_square,"Qi_no_corr_err":Qi_no_corr_err,"Qi_dia_corr_err": Qi_dia_corr_err,"chi_square_": chi_square/self.measurement_error_estimate(z_data,m)}
+                Qc_err = np.sqrt( (1/np.cos(phi0))**2 * absQc_err**2 + (absQc * np.sin(phi0)/np.cos(phi0)**2)**2 * phi0_err**2 )
+                
+                errors = {"phi0_err":phi0_err, "Ql_err":Ql_err, "absQc_err":absQc_err, "fr_err":fr_err,"residue":chi_square,"Qi_no_corr_err":Qi_no_corr_err,"Qi_dia_corr_err": Qi_dia_corr_err,"chi_square_": chi_square/self.measurement_error_estimate(z_data,m), "Qc_dia_corr_err": Qc_err}
                 # "chi_square" assumes measurement deviation squared equals 1
                 # "chi_squre_" estimates measurement error from the mean distance between two adjacent data points of the first m data points
                 

@@ -187,7 +187,9 @@ class circlefit(object):
         """
         def residuals_1(p,x,y):
             alpha, phasedelay = p
-            z_data_temp = y*np.exp(1j*(2.*np.pi*phasedelay*x))/(1+alpha*(x/fr-1))
+            z_data_temp = y/(1+alpha*(x/fr-1))
+            phasedelay= self._fit_delay(f_data,z_data,phasedelay,maxiter=200)
+            z_data_temp = y*np.exp(1j*(2.*np.pi*phasedelay*x))
             xc,yc,r0 = self._fit_circle(z_data_temp)
             err = np.sqrt((z_data_temp.real-xc)**2+(z_data_temp.imag-yc)**2)-r0
             return err
@@ -201,7 +203,7 @@ class circlefit(object):
         
         p_init = [alpha]
         p_final = spopt.leastsq(residuals_2,p_init,args=(f_data,z_data),maxfev=maxiter,ftol=1e-12,xtol=1e-12)
-#        alpha = p_final[0][0]
+        alpha = p_final[0][0]
 
 #        p_init = [alpha,delay]
 #        p_final = spopt.leastsq(residuals_1,p_init,args=(f_data,z_data),maxfev=1000,ftol=1e-12,xtol=1e-12)

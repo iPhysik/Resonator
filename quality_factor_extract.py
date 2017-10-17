@@ -17,15 +17,14 @@ from scipy import stats
 from circuit import *
 from utilities import phase_vs_freq
 from pprint import pprint
+from copy import deepcopy
 
-def loaddata(fname):
-    data = np.loadtxt(fname,skiprows=3)   
+def loaddata(fname,f_col=2,mag_col=4,phase_col=5,phase_unit='RAD'):
+    data = np.loadtxt(fname,skiprows=3,)   
     f = data[:,2]
     mag=data[:,3]
     phase=-data[:,4]
-#    f = data[:,0]
-#    mag = data[:,3]#/np.max(data[:,3])
-#    phase = -np.deg2rad(data[:,4])   
+#    phase = np.deg2rad(data[:,5])
     S21 = mag*np.cos(phase)+1j*mag*np.sin(phase)
     return f, S21           
 
@@ -52,66 +51,78 @@ if __name__ == "__main__":
 
     plt.close("all")    
     angles=np.linspace(0,2*np.pi,2000)
-    REMOVE_BACKGND = True # remove |S21| background slope or not. 
+    REMOVE_BACKGND = False # remove |S21| background slope or not. 
 
     # set file directory and name
     fdir = 'D:\\Dropbox\\Drive\\Projects\\Resonator\\data\\AlOx\\'
-    data_file=['170627-ADC_InOx04_f7.61_ps150mK-.dat']
+    data_file=['170627-ADC_InOx04_f7.11_ps500mK-181421.dat']
     fname = fdir + data_file[0]
     
-    f,S21 = loaddata(fname)
+    f,S21 = loaddata(fname) # phase_unit='DEG' or 'RAD'
     port = notch_port(f,S21)
-    
+
     if False:
-        index=np.arange(300,501)
+        index=np.arange(580,802)
 #        index=np.hstack((index,np.arange(-100,-1)))
-        f=f[index]
-        S21=S21[index]
+        f_data_origin=f[index]
+        z_data_origin=S21[index]
+    else:
+        f_data_origin=f
+        z_data_origin=S21
+    
+    f_data=f_data_origin
+    z_data=z_data_origin
 
     plt.subplots(2,1)
     plt.suptitle('Raw data')
     plt.subplot(211)
-    plt.plot(f,np.abs(S21),'+-')
+    plt.plot(f_data,np.abs(z_data),'+-')
     plt.subplot(212)
-    plt.plot(f,np.angle(S21),'+-')
+    plt.plot(f_data,np.angle(z_data),'+-')
 
-   # # 1st Remove electric delay ===================
-    A1, A2, A3, A4, frcal, Ql=port._fit_skewed_lorentzian(f,S21)
-    f_data = f
-    z_data = S21
-    
-    # fit delay
-    delay = port._guess_delay(f_data,z_data)
-    delay = 48
-    delay = port._fit_delay(f_data,z_data,delay,maxiter=200)
-    delay = 46.84558
-#    
     if REMOVE_BACKGND:
-        linear_var = port._fit_delay_and_linear_var_in_S21(f_data,z_data,frcal,delay,alpha=0,maxiter = 200)
+#        frcal = f_data[np.argmin(np.abs(z_data))]
+#        linear_var = port._fit_delay_and_linear_var_in_S21(f_data,z_data,frcal,delay,alpha=0,maxiter = 200)
+        linear_var = -22
+        z_data = z_data/(1+linear_var*(f_data/frcal-1)) 
     else: 
         linear_var = 0
-    # remove delay
-    z_data = z_data*np.exp(2.*1j*np.pi*delay*f_data)/(1+linear_var*(f_data/frcal-1))
     
+    delay = port._guess_delay(f_data,z_data)
+#    delay= 
+    delay = port._fit_delay(f_data,z_data,delay,maxiter=200)
+    A1, A2, A3, A4, frcal, Ql=port._fit_skewed_lorentzian(f_data,z_data)
+    # remove delay
+    z_data = z_data_origin*np.exp(2.*1j*np.pi*delay*f_data)
+    
+    if REMOVE_BACKGND:
+        plt.subplots()
+        plt.title('|S21| before and after background slope removed')
+        plt.plot(f_data_origin,np.absolute(z_data_origin),'+')
+        plt.plot(f_data,np.absolute(z_data),'.')
+
     xc, yc, r0 = port._fit_circle(z_data,refine_results=True)
 
     plt.subplots()
-    plt.title('circle fit')
-    plt.plot(xc+r0*np.cos(angles),yc+r0*np.sin(angles))
     plt.plot(np.real(z_data),np.imag(z_data),'.')
-
+    plt.title('circle fit')
+    xc, yc, r0 = port._fit_circle(z_data,refine_results=True)
+    plt.plot(xc+r0*np.cos(angles),yc+r0*np.sin(angles))
 ## 
     zc = np.complex(xc,yc)
     theta = np.angle(port._center(z_data,zc))[np.argmin(f_data-frcal)]
+    theta=-4
     fitparams = port._phase_fit(f_data,port._center(z_data,zc),theta,np.absolute(Ql),frcal)
     theta, Ql, fr = fitparams
     plt.subplots()
     plt.title('phase fit before after')
-    _phase = np.angle(port._center(z_data,zc))
+    _phase = np.angle(port._center(z_data,zc)) 
     plt.plot(f_data,np.unwrap(_phase),'.')
+
+    if Ql<0:
+        raise('Ql is less than zero')
     _phase = theta+2.*np.arctan(2.*Ql*(1.-f_data/fr))
     plt.plot(f_data, _phase)
-    
 #    beta = port._periodic_boundary(theta+np.pi,np.pi)
     beta = theta + np.pi
     offrespoint = np.complex((xc+r0*np.cos(beta)),(yc+r0*np.sin(beta)))
@@ -130,18 +141,19 @@ if __name__ == "__main__":
     plt.xlim(-2,2)
     plt.ylim(-2,2)
     
-    port.fitresults = port.circlefit(f_data,z_data,fr,Ql,refine_results=True,calc_errors=True,m=30)
-    z_data_sim = port._S21_notch(f,fr=port.fitresults["fr"],Ql=port.fitresults["Ql"],Qc=port.fitresults["absQc"],phi=port.fitresults["phi0"],a=a,alpha=alpha,delay=delay) * (1+linear_var*(f_data/port.fitresults["fr"]-1))
+    port.fitresults = port.circlefit(f_data,z_data,fr,Ql,refine_results=True,calc_errors=True,m=20)
+    
+    z_data_sim = port._S21_notch(f_data,fr=port.fitresults["fr"],Ql=port.fitresults["Ql"],Qc=port.fitresults["absQc"],phi=port.fitresults["phi0"],a=a,alpha=alpha,delay=delay) * (1+linear_var*(f_data/port.fitresults["fr"]-1))
     
     plt.subplots(2,1)
     plt.subplot(2,1,1)
     plt.title('raw data vs simulated data, Mag')
-    plt.plot(f,np.abs(S21),'+')
-    plt.plot(f,np.abs(z_data_sim))
+    plt.plot(f_data_origin,np.abs(z_data_origin),'+')
+    plt.plot(f_data,np.abs(z_data_sim))
     plt.subplot(2,1,2)
     plt.title('raw data vs simulated data, phase')
-    plt.plot(f,np.angle(S21),'+')
-    plt.plot(f,np.angle(z_data_sim))
+    plt.plot(f_data_origin,np.angle(z_data_origin),'+')
+    plt.plot(f_data,np.angle(z_data_sim))
     
     results = np.array([port.fitresults['fr'],
                port.fitresults['Qi_dia_corr'],
@@ -154,9 +166,12 @@ if __name__ == "__main__":
                port.fitresults['Ql'],
                port.fitresults['Ql_err'],
                port.fitresults['chi_square_'],
-               delay
+               delay,
+               a,
+               port.fitresults['Qc_dia_corr_err']
                ])
     results = np.reshape(results,(1,results.size))
+    print('===========Results===========')
     pprint(port.fitresults)
     
     print('average number of photons in resonator at -130dBm input power', port.get_photons_in_resonator(-130))
