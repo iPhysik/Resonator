@@ -3,6 +3,7 @@ import numpy as np
 import scipy.optimize as spopt
 from scipy import stats
 import matplotlib.pyplot as plt
+from scipy.optimize import curve_fit
 
 class circlefit(object):
     '''
@@ -210,7 +211,7 @@ class circlefit(object):
 #        print(p_final)
         return p_final[0]
     
-    def _fit_delay_alt_bigdata(self,f_data,z_data,delay=0.,maxiter=0):
+    def _fit_delay_alt_bigdata(self,f_data,z_data,delay=0.,maxiter=100):
         def residuals(p,x,y):
             phasedelay = p
             z_data_temp = 1j*2.*np.pi*phasedelay*x
@@ -223,28 +224,30 @@ class circlefit(object):
         p_final = spopt.leastsq(residuals,delay,args=(f_data,z_data),maxfev=maxiter,ftol=1e-12,xtol=1e-12)
         return p_final[0][0]
     
-    def _fit_entire_model(self,f_data,z_data,fr,absQc,Ql,phi0,delay,a=1.,alpha=0.,maxiter=0):
+    def _fit_entire_model(self,f_data,z_data,fr,absQc,Ql,phi0,delay,a=1.,alpha=0.,ftol=1e-10,xtol=1e-10,maxfev=2000):
         '''
         fits the whole model: a*exp(i*alpha)*exp(-2*pi*i*f*delay) * [ 1 - {Ql/Qc*exp(i*phi0)} / {1+2*i*Ql*(f-fr)/fr} ]
         '''
-        def funcsqr(p,x):
-            fr,absQc,Ql,phi0,delay,a,alpha = p
-            return np.array([np.absolute( ( a*np.exp(np.complex(0,alpha))*np.exp(np.complex(0,-2.*np.pi*delay*x[i])) * ( 1 - (Ql/absQc*np.exp(np.complex(0,phi0)))/(np.complex(1,2*Ql*(x[i]-fr)/fr)) )  ) )**2 for i in range(len(x))])
         def residuals(p,x,y):
             fr,absQc,Ql,phi0,delay,a,alpha = p
             err = [np.absolute( y[i] - ( a*np.exp(np.complex(0,alpha))*np.exp(np.complex(0,-2.*np.pi*delay*x[i])) * ( 1 - (Ql/absQc*np.exp(np.complex(0,phi0)))/(np.complex(1,2*Ql*(x[i]-fr)/fr)) )  ) ) for i in range(len(x))]
-            return err
+            return np.array(err)
+
         p0 = [fr,absQc,Ql,phi0,delay,a,alpha]
-        (popt, params_cov, infodict, errmsg, ier) = spopt.leastsq(residuals,p0,args=(np.array(f_data),np.array(z_data)),full_output=True,maxfev=maxiter)
+        (popt, params_cov, infodict, errmsg, ier) = spopt.leastsq(residuals,p0,args=(np.array(f_data),np.array(z_data)),full_output=True,ftol=ftol,xtol=xtol,maxfev=maxfev) # if ftol or xtol are set too small error will return
+#        print('params_cov', params_cov)
         len_ydata = len(np.array(f_data))
         if (len_ydata > len(p0)) and params_cov is not None:  #p_final[1] is cov_x data  #this caculation is from scipy curve_fit routine - no idea if this works correctly...
-            s_sq = (funcsqr(popt, np.array(f_data))).sum()/(len_ydata-len(p0))
-            params_cov = params_cov * s_sq
+            s_sq = (residuals(popt, np.array(f_data),np.array(z_data))**2).sum()/(len_ydata-len(p0))
+            pcov = params_cov * s_sq
         else:
-            params_cov = np.inf
-        return popt, params_cov, infodict, errmsg, ier
+            pcov = np.inf
+        
+        chi = residuals(p0,f_data,z_data)
+        chisqr = 1./float(len(f_data)-len(p0)) * (chi**2).sum()
+        
+        return popt, pcov, chisqr, infodict, errmsg, ier
     
-    #
     
     def _optimizedelay(self,f_data,z_data,Ql,fr,maxiter=4):
         xc,yc,r0 = self._fit_circle(z_data)
@@ -333,12 +336,19 @@ class circlefit(object):
         p0 = [rc]
         p_final = spopt.leastsq(residuals,p0,args=(xdat,ydat))
         return p_final[0][0]
+    def _get_cov(self,xdata,ydata, fitparams):
+        """
+        fitparams: fr,absQc,Ql,phi0, a, alpha, delay
+        """
+        pass
+      
     
+        
     def _get_errors(self,residual,xdata,ydata,fitparams):
         '''
         wrapper for get_cov, only gives the errors and chisquare
         '''
-        chisqr, cov = self._get_cov(residual,xdata,ydata,fitparams)
+        chisqr, cov = self._get_cov(xdata,ydata,fitparams)
         if cov!=None:
             errors = np.sqrt(np.diagonal(cov))
         else:

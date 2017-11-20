@@ -271,6 +271,7 @@ class notch_port(circlefit, save_load, plotting, calibration):
         if fr==None: fr=f_data[np.argmin(np.absolute(z_data))]
         if Ql==None: Ql=1e6
         xc, yc, r0 = self._fit_circle(z_data,refine_results=refine_results)
+        
         phi0 = -np.arcsin(yc/r0)
         theta0 = self._periodic_boundary(phi0+np.pi,np.pi)
         z_data_corr = self._center(z_data,np.complex(xc,yc))
@@ -281,7 +282,7 @@ class notch_port(circlefit, save_load, plotting, calibration):
         Qc = 1./(1./complQc).real   # here, taking the real part of (1/complQc) from diameter correction method
         Qi_dia_corr = 1./(1./Ql-1./Qc)
         Qi_no_corr = 1./(1./Ql-1./absQc)
-    
+        
         results = {"Qi_dia_corr":Qi_dia_corr,"Qi_no_corr":Qi_no_corr,"absQc":absQc,"Qc_dia_corr":Qc,"Ql":Ql,"fr":fr,"theta0":theta0,"phi0":phi0}
     
         #calculation of the error
@@ -323,6 +324,43 @@ class notch_port(circlefit, save_load, plotting, calibration):
             results.update(errors)
     
         return results
+        
+    def results_from_fit_entire_model(self, f_data,z_data,fr,absQc,Ql,phi0,delay,a=1.,alpha=0.,ftol=1e-6,xtol=1e-6, m =100, maxfev=1000):
+        popt, cov, chisqr, infodict, errmsg, ier = self._fit_entire_model(f_data,z_data,fr,absQc,Ql,phi0,delay,a,alpha,ftol=ftol,xtol=xtol,maxfev=maxfev)
+        print('covariance from fit entire model', cov)
+        print(errmsg)
+        complQc = absQc*np.exp(1j*((1.)*phi0))
+        Qc = 1./(1./complQc).real   # here, taking the real part of (1/complQc) from diameter correction method
+        Qi_dia_corr = 1./(1./Ql-1./Qc)
+#        Qi_no_corr = 1./(1./Ql-1./absQc)
+        
+        results = {"Qi":Qi_dia_corr,"absQc":absQc,"Qc":Qc,"Ql":Ql,"fr":fr,"phi0":phi0,'delay':delay,'a':a}
+    
+        #calculation of the error
+        if cov is not None:
+            errors = np.sqrt(np.diagonal(cov))
+            fr_err,absQc_err,Ql_err,phi0_err,delay_err,a_err,alpha_err = errors
+            #calc Qi with error prop (sum the squares of the variances and covariaces)
+            #dQi_dQl = 1./((1./Ql-1./absQc)**2*Ql**2)
+            #dQi_dabsQc = - 1./((1./Ql-1./absQc)**2*absQc**2)
+            #Qi_no_corr_err = np.sqrt((dQi_dQl**2*cov[2][2]) + (dQi_dabsQc**2*cov[1][1])+(2*dQi_dQl*dQi_dabsQc*cov[2][1]))  #with correlations
+            #calc Qi dia corr with error prop
+            dQi_dQl = 1/((1/Ql-np.cos(phi0)/absQc)**2 *Ql**2)
+            dQi_dabsQc = -np.cos(phi0)/((1/Ql-np.cos(phi0)/absQc)**2 *absQc**2)
+            dQi_phi0 = -np.sin(phi0)/((1/Ql-np.cos(phi0)/absQc)**2 *absQc)
+            ##err1 = ( (dQl*cov[2][2])**2 + (dabsQc*cov[1][1])**2 + (dphi0*cov[3][3])**2 )
+            err1 = ( (dQi_dQl**2*cov[2][2]) + (dQi_dabsQc**2*cov[1][1]) + (dQi_phi0**2*cov[3][3]) )
+            err2 = ( dQi_dQl*dQi_dabsQc*cov[2][1] + dQi_dQl*dQi_phi0*cov[2][3] + dQi_dabsQc*dQi_phi0*cov[1][3] )
+            Qi_dia_corr_err =  np.sqrt(err1+2*err2)  # including correlations
+            dQc_dabsQc = 1/np.cos(phi0) 
+            dQc_dphi0 = absQc * np.sin(phi0)/np.cos(phi0)**2            
+            Qc_err = np.sqrt(dQc_dabsQc**2 * cov[1][1] + dQc_dphi0**2 * cov[3][3] + 2 * dQc_dabsQc * dQc_dphi0 * cov[1][3])
+            
+            errors = {"Qi_err":Qi_dia_corr_err,"absQc_err":absQc_err,"Qc_err":Qc_err,"Ql_err":Ql_err,"fr_err":fr_err,"phi0_err":phi0_err,'chisquare':chisqr/self.measurement_error_estimate(z_data,m),'delay_err':delay_err,'a_err':a_err}
+            
+            results.update( errors )
+        return results
+        
     def measurement_error_estimate(self,z_data,m):
         z = z_data[0:m+1]
         z_diff = np.diff(z_data)

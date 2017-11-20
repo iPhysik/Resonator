@@ -84,7 +84,7 @@ def TLResonator(w,s,freq_Hz,Rsq,Tc,T):
     lambda_ = WaveLength(freq_Hz,vp)
     print(" Geometric L: %.4g H \n Kinetic L : %.4g H\n Ratio K/G %.2f \n" %(Lg,Lk,Lk/Lg))
     print("TL line impedance Zr = %.4g Ohm" % Zr)
-    print("wave length lambda_ = %.4g um" % (lambda_/1.e-6))
+    #print("wave length lambda_ = %.4g um" % (lambda_/1.e-6))
     return Cl,Ll,Zr,lambda_
     
 if __name__=='__main__':
@@ -97,22 +97,19 @@ if __name__=='__main__':
     s_m = 6 * 1e-6 #m, gap of coplanar line
     g =1 # g = Qint/Qe
     # Aluminum feed line: 
-#    a=TLResonator(w=300e-6,s=180e-6,freq_Hz=6e9,Rsq=1,Tc=1.7,T=0.8) 
-    Quarterwave,Halfwave = [True,False]#[::-1]
-    
+    a=TLResonator(w=20e-6,s=12e-6,freq_Hz=5.1e9,Rsq=1,Tc=2,T=0.03) 
+    Quarterwave,Halfwave = [False,True]
+    Rsq_list=[600]
+
+if False:    
     # calculating resonator length given resonant frequency
     if False:
         resonator_length_um=[]
         coupler_cap_pH=[]
-        for Rsq in [1153]:
+        for Rsq in Rsq_list:
             print("\nRsq = %f\n" % Rsq)
             for freq_Hz in freq_Hz_list:
-                Cl,Ll,Zr,lambda_ = TLResonator(w_m,s_m,freq_Hz,Rsq,Tc=2.2,T=T)
-    #            half_wavelength = [686,610,549,499,457,422,392,366]
-    #            wavelength = np.array(half_wavelength)*1e-6*2
-        #        frequency = func_frequency(wavelength,Ll,Cl)/1e9
-        #        print('Lsq %.0fpH'%(w_m*Ll*1e12))
-        #    print(frequency)
+                Cl,Ll,Zr,lambda_ = TLResonator(w_m,s_m,freq_Hz,Rsq,Tc=6,T=T_K)
                 if Quarterwave:
                     length = lambda_/4.
                     Cc = CouplingC(length,Ll,Cl,freq_Hz,Qint,g,Zr,'Q')
@@ -130,17 +127,19 @@ if __name__=='__main__':
         
     # calculating resonant frequency given length
     else:
-        for Rsq in [1153]:
+        for Rsq in Rsq_list:
             print("\nRsq = %f\n" % Rsq)
-            Cl,Ll,Zr,lambda_ = TLResonator(w_m,s_m,freq_Hz,Rsq,Tc=2.2,T=T)
+            Cl,Ll,Zr,lambda_ = TLResonator(w_m,s_m,2e9,Rsq,Tc=2,T=T_K)
             vp = phase_velocity(Ll,Cl)
-            halfwave_resonator_length_um = np.array([686,610,549,499,457,422,392,366])
-            wavelength = 2*halfwave_resonator_length_um*1e-6 
+            resonator_length_um = np.array([950,750])
+            wavelength = 2*resonator_length_um*1e-6 
             frequency_list=[]
             for length in wavelength:
                 frequency = vp/length/1e9
                 frequency_list.append(frequency)
                 
-            results = np.vstack((halfwave_resonator_length_um,frequency_list))
+            results = np.vstack((resonator_length_um,frequency_list))
             results = np.transpose(results)
             print(results)
+            
+    
