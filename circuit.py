@@ -329,12 +329,13 @@ class notch_port(circlefit, save_load, plotting, calibration):
         popt, cov, chisqr, infodict, errmsg, ier = self._fit_entire_model(f_data,z_data,fr,absQc,Ql,phi0,delay,a,alpha,ftol=ftol,xtol=xtol,maxfev=maxfev)
         print('covariance from fit entire model', cov)
         print(errmsg)
+        fr,absQc,Ql,phi0,delay,a,alpha = popt
         complQc = absQc*np.exp(1j*((1.)*phi0))
         Qc = 1./(1./complQc).real   # here, taking the real part of (1/complQc) from diameter correction method
         Qi_dia_corr = 1./(1./Ql-1./Qc)
 #        Qi_no_corr = 1./(1./Ql-1./absQc)
         
-        results = {"Qi":Qi_dia_corr,"absQc":absQc,"Qc":Qc,"Ql":Ql,"fr":fr,"phi0":phi0,'delay':delay,'a':a}
+        results = {"Qi":Qi_dia_corr,"absQc":absQc,"Qc":Qc,"Ql":Ql,"fr":fr,"phi0":phi0,'delay':delay,'a':a,'alpha':alpha}
     
         #calculation of the error
         if cov is not None:
@@ -356,7 +357,7 @@ class notch_port(circlefit, save_load, plotting, calibration):
             dQc_dphi0 = absQc * np.sin(phi0)/np.cos(phi0)**2            
             Qc_err = np.sqrt(dQc_dabsQc**2 * cov[1][1] + dQc_dphi0**2 * cov[3][3] + 2 * dQc_dabsQc * dQc_dphi0 * cov[1][3])
             
-            errors = {"Qi_err":Qi_dia_corr_err,"absQc_err":absQc_err,"Qc_err":Qc_err,"Ql_err":Ql_err,"fr_err":fr_err,"phi0_err":phi0_err,'chisquare':chisqr/self.measurement_error_estimate(z_data,m),'delay_err':delay_err,'a_err':a_err}
+            errors = {"Qi_err":Qi_dia_corr_err,"absQc_err":absQc_err,"Qc_err":Qc_err,"Ql_err":Ql_err,"fr_err":fr_err,"phi0_err":phi0_err,'chisquare':chisqr/self.measurement_error_estimate(z_data,m),'delay_err':delay_err,'a_err':a_err,'alpha_err':alpha_err}
             
             results.update( errors )
         return results
@@ -384,27 +385,19 @@ class notch_port(circlefit, save_load, plotting, calibration):
         '''
         return a*np.exp(np.complex(0,alpha))*np.exp(-2j*np.pi*f*delay)*(1.-Ql/Qc*np.exp(1j*phi)/(1.+2j*Ql*(f-fr)/fr))    
     
-    def get_single_photon_limit(self,unit='dBm'):
+    def get_single_photon_limit(self,fr, Ql, Qc,unit='dBm'):
         '''
         returns the amout of power in units of W necessary
         to maintain one photon on average in the cavity
         unit can be 'dBm' or 'watt'
         '''
-        if self.fitresults!={}:
-            fr = self.fitresults['fr'] * 1e9
-            k_c = fr/self.fitresults['absQc']
-            k_i = fr/self.fitresults['Qi_dia_corr']
-#            power = 1./(4.*k_c/(2.*np.pi*hbar*fr*(k_c+k_i)**2)) 
-            power = hbar * (2*np.pi*fr)**2 * self.fitresults['Qc_dia_corr']/2/self.fitresults['Ql']**2
-            if unit=='dBm':
-                return Watt2dBm(power)
-            elif unit=='watt':
-                return power
-        else:
-            warnings.warn('Please perform the fit first',UserWarning)
-            return None
+        power = hbar * (2*np.pi*fr*1e9)**2 * Qc/2/Ql**2
+        if unit=='dBm':
+            return Watt2dBm(power)
+        elif unit=='watt':
+            return power
         
-    def get_photons_in_resonator(self,power,unit='dBm'):
+    def get_photons_in_resonator(self,power, fr, Ql, Qc, unit='dBm'):
         '''
         returns the average number of photons
         for a given power in units of W
@@ -418,7 +411,7 @@ class notch_port(circlefit, save_load, plotting, calibration):
 #            k_i = fr/self.fitresults['Qi']
 #            return 4.*k_c/(2.*np.pi*hbar*fr*(k_c+k_i)**2) * power
 
-            return 2/(hbar*(2*np.pi*self.fitresults['fr']*1e9)**2) * self.fitresults['Ql']**2 / self.fitresults['Qc_dia_corr'] * power
+            return 2/(hbar*(2*np.pi*fr*1e9)**2) * Ql**2 / Qc * power
         
         else:
             warnings.warn('Please perform the fit first',UserWarning)

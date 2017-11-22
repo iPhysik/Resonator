@@ -19,13 +19,13 @@ from utilities import phase_vs_freq
 from pprint import pprint
 from copy import deepcopy
 
-def loaddata(fname,f_col=2,mag_col=4,phase_col=5,phase_unit='RAD'):
-    data = np.loadtxt(fname,skiprows=9,delimiter=',')   
-    f = data[:,0]
+def loaddata(fname,f_col=3,mag_col=4,phase_col=5,phase_unit='RAD'):
+    data = np.loadtxt(fname,skiprows=19,)   
+    f = data[:,2]
     mag=data[:,3]
 #    mag = 10**(mag/20)
-#    phase=-data[:,4]
-    phase = np.deg2rad(data[:,4])
+    phase=-data[:,4]
+#    phase = np.deg2rad(data[:,4])
     S21 = mag*np.cos(phase)+1j*mag*np.sin(phase)
     return f, S21           
 
@@ -53,12 +53,11 @@ if __name__ == "__main__":
 
     plt.close("all")    
     angles=np.linspace(0,2*np.pi,2000)
-    REMOVE_BACKGND = False # remove |S21| background slope or not. 
 
     # set file directory and name
-    fdir = 'D:\\Dropbox\\Drive\\Projects\\Resonator\\MKID\\Tom Nb Design\\'
+    fdir = 'D:\\Dropbox\\Drive\\Projects\\Resonator\\\data\\Nb\\'
     data_file=[
-'qw_smallTL_1res6060_nb_nostrip10_Qc70k-coupl_coarse2.csv'
+'171121-ADC_AlOx03-5.86f_ps-215916.txt'
     ]
     fname = fdir + data_file[0]
     
@@ -78,7 +77,7 @@ if __name__ == "__main__":
     port = notch_port(f,S21)
     
     if True:
-        index=np.arange(400,550)
+        index=np.arange(0+600*4,599+600*4)
 #        index=np.hstack((index,np.arange(-100,-1)))
         f_data_origin=f[index]
         z_data_origin=S21[index]
@@ -94,25 +93,26 @@ if __name__ == "__main__":
     plt.subplot(211)
     plt.plot(f_data,np.abs(z_data),'+-')
     plt.subplot(212)
-    plt.plot(f_data,np.angle(z_data),'+-')
+    plt.plot(f_data,np.unwrap(np.angle(z_data)),'+-')
 #
-if True:
     
     delay = port._guess_delay(f_data,z_data)
 #    delay = 0
     delay=port._fit_delay(f_data,z_data,delay,maxiter=500)
 #    delay = 50
 #    
-    A1, A2, A3, A4, frcal, Ql=port._fit_skewed_lorentzian(f_data,z_data)
-    print('Initial Ql from skewed lorentzian fit %d'%Ql)
+#    delay = -np.polyfit(f[180:300],np.unwrap(np.angle(z_data))[180:300],1)[0]/2/np.pi
+
+    if True: # Use fit_skewed_lorentzian to initialize parameters for further fitting 
+        A1, A2, A3, A4, frcal, Ql=port._fit_skewed_lorentzian(f_data,z_data)
+        print('Initial Ql from skewed lorentzian fit %d'%Ql)
+    else:
+        Ql = 10000
+        frcal = 4.788
+        print('Manually initialize Ql and fr by eyeball. Ql=%d, fr=%.4fGHz:'%(Ql,frcal))
+    
     # remove delay
     z_data = z_data_origin*np.exp(2.*1j*np.pi*delay*f_data)
-
-    if REMOVE_BACKGND:
-        plt.subplots()
-        plt.title('|S21| before and after background slope removed')
-        plt.plot(f_data_origin,np.absolute(z_data_origin),'+')
-        plt.plot(f_data,np.absolute(z_data),'.')
 
     xc, yc, r0 = port._fit_circle(z_data,refine_results=True)
 
@@ -122,10 +122,10 @@ if True:
     xc, yc, r0 = port._fit_circle(z_data,refine_results=True)
     plt.plot(xc+r0*np.cos(angles),yc+r0*np.sin(angles))
 ## 
-
+#if False:
     zc = np.complex(xc,yc)
     theta = np.angle(port._center(z_data,zc))[np.argmin(f_data-frcal)]
-    theta = 0
+    theta = -4
     fitparams = port._phase_fit(f_data,port._center(z_data,zc),theta,np.absolute(Ql),frcal)
     theta, Ql, fr = fitparams
 #    Ql = 3180
@@ -138,6 +138,7 @@ if True:
         raise('Ql is less than zero')
     _phase = theta+2.*np.arctan(2.*Ql*(1.-f_data/fr))
     plt.plot(f_data, _phase)
+    
 #    beta = port._periodic_boundary(theta+np.pi,np.pi)
     beta = theta + np.pi
     offrespoint = np.complex((xc+r0*np.cos(beta)),(yc+r0*np.sin(beta)))
@@ -165,8 +166,15 @@ if True:
     
 #    for i in np.arange(100):
     results_entire_model = port.results_from_fit_entire_model(f_data_origin,z_data_origin,
-                                                                     fr,absQc,Ql,phi0,delay,a,alpha,ftol=1e-10,xtol=1e-10,maxfev=2000)
-#    fr,absQc,Ql,phi0,delay,a,alpha = popt
+                                                                     fr,absQc,Ql,phi0,delay,a,alpha,ftol=1e-8,xtol=1e-8,maxfev=2000)
+    fr,absQc,Ql,phi0,delay,a,alpha = [results_entire_model['fr'],
+                                       results_entire_model['absQc'],
+                                       results_entire_model['Ql'],
+                                       results_entire_model['phi0'],
+                                       results_entire_model['delay'],
+                                       results_entire_model['a'],
+                                       results_entire_model['alpha']
+               ]
 #        
     #fit_errs = np.sqrt(np.diag(params_cov)) 
     #fr_err,absQc_err,Ql_err,phi0_err,delay_err,a_err,alpha_err =  fit_errs
@@ -183,8 +191,11 @@ if True:
     plt.plot(f_data_origin,np.angle(z_data_origin),'.')
     plt.plot(f_data,np.angle(z_data_sim),c='r')
     
-    print('===========Results===========')
+    print('===========OLD Results===========')
+    pprint(port.fitresults)
+    print('===========NEW Results===========')
     pprint(results_entire_model)
+    
     results_old = np.array([port.fitresults['fr'],
                port.fitresults['fr_err'],
                port.fitresults['Qi_dia_corr'],
@@ -220,12 +231,13 @@ if True:
                 results_entire_model['a'],
                 results_entire_model['a_err'],
                 results_entire_model['phi0'],
-                results_entire_model['phi0_err']
-
+                results_entire_model['phi0_err'],
+                results_entire_model['alpha'],
+                results_entire_model['alpha_err'],
 ]
     results = np.reshape(results,(1,np.size(results)))
 
-    print('average number of photons in resonator at -130dBm input power', port.get_photons_in_resonator(-130))
-    print('single photon limit power at input port(dBm)',port.get_single_photon_limit())
+    print('average number of photons in resonator at -130dBm input power', port.get_photons_in_resonator(-130, results_entire_model['fr'], results_entire_model['Ql'],results_entire_model['Qc']))
+    print('single photon limit power at input port(dBm)',port.get_single_photon_limit(results_entire_model['fr'], results_entire_model['Ql'],results_entire_model['Qc']))
     
   

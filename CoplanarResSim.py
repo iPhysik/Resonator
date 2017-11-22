@@ -97,7 +97,7 @@ if __name__=='__main__':
     s_m = 6 * 1e-6 #m, gap of coplanar line
     g =1 # g = Qint/Qe
     # Aluminum feed line: 
-    a=TLResonator(w=20e-6,s=12e-6,freq_Hz=5.1e9,Rsq=1,Tc=2,T=0.03) 
+    Cl,Ll,Zr,lambda_ =TLResonator(w=20e-6,s=12e-6,freq_Hz=5.1e9,Rsq=1,Tc=6,T=0.03) 
     Quarterwave,Halfwave = [False,True]
     Rsq_list=[600]
 
