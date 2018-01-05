@@ -166,10 +166,22 @@ class circlefit(object):
             print ("iterative r0: " + str(r0))
         return xc, yc, r0
 
-    def _guess_delay(self,f_data,z_data):
-        phase2 = np.unwrap(np.angle(z_data))
+    def _guess_delay(self,f_data,z_data,f_min,f_max,PLOT=True):
+        index_min = np.argmin(np.abs(f_data-f_min))
+        index_max = np.argmin(np.abs(f_data-f_max))
+        index = np.arange(index_min,index_max+1)
+        
+        phase2 = np.unwrap(np.angle(z_data))[index]
+        f_data = f_data[index]
         gradient, intercept, r_value, p_value, std_err = stats.linregress(f_data,phase2)
-        return gradient*(-1.)/(np.pi*2.)
+        if PLOT:
+            plt.subplots()
+            plt.title('linear delay fit, slope={} pm {}'.format(gradient*(-1.)/(np.pi*2.),std_err*(1.)/(np.pi*2.)))
+            plt.plot(f_data,phase2,'.')
+            plt.plot(np.linspace(f_data.min(),f_data.max(),1000),gradient*np.linspace(f_data.min(),f_data.max(),1000)+intercept)
+        gradient= gradient*(-1.)/(np.pi*2.)
+        std_err = std_err*(1.)/(np.pi*2.)
+        return gradient,std_err
     
     
     def _fit_delay(self,f_data,z_data,delay=0.,maxiter=0):
@@ -244,10 +256,33 @@ class circlefit(object):
             pcov = np.inf
         
         chi = residuals(p0,f_data,z_data)
-        chisqr = 1./float(len(f_data)-len(p0)) * (chi**2).sum()
+        res = (chi**2).sum() # calculate residuals
         
-        return popt, pcov, chisqr, infodict, errmsg, ier
+        return popt, pcov, res, infodict, errmsg, ier
     
+    def _fit_entire_model_except_delay(self,f_data,z_data,fr,absQc,Ql,phi0,a=1.,alpha=0.,ftol=1e-10,xtol=1e-10,maxfev=2000):
+        '''
+        fits the whole model: a*exp(i*alpha) * [ 1 - {Ql/Qc*exp(i*phi0)} / {1+2*i*Ql*(f-fr)/fr} ]
+        '''
+        def residuals(p,x,y):
+            fr,absQc,Ql,phi0,a,alpha = p
+            err = [np.absolute( y[i] - ( a*np.exp(np.complex(0,alpha)) * ( 1 - (Ql/absQc*np.exp(np.complex(0,phi0)))/(np.complex(1,2*Ql*(x[i]-fr)/fr)) )  ) ) for i in range(len(x))]
+            return np.array(err)
+
+        p0 = [fr,absQc,Ql,phi0,a,alpha]
+        (popt, params_cov, infodict, errmsg, ier) = spopt.leastsq(residuals,p0,args=(np.array(f_data),np.array(z_data)),full_output=True,ftol=ftol,xtol=xtol,maxfev=maxfev) # if ftol or xtol are set too small error will return
+#        print('params_cov', params_cov)
+        len_ydata = len(np.array(f_data))
+        if (len_ydata > len(p0)) and params_cov is not None:  #p_final[1] is cov_x data  #this caculation is from scipy curve_fit routine - no idea if this works correctly...
+            s_sq = (residuals(popt, np.array(f_data),np.array(z_data))**2).sum()/(len_ydata-len(p0))
+            pcov = params_cov * s_sq
+        else:
+            pcov = np.inf
+        
+        chi = residuals(p0,f_data,z_data)
+        res = (chi**2).sum()
+        
+        return popt, pcov, res, infodict, errmsg, ier    
     
     def _optimizedelay(self,f_data,z_data,Ql,fr,maxiter=4):
         xc,yc,r0 = self._fit_circle(z_data)

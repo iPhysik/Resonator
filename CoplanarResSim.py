@@ -6,7 +6,7 @@ from math import *
 import scipy.constants as const
 from scipy.special import ellipk
 import numpy as np
-
+import  matplotlib.pyplot as plt
 def L_k(w,Rsq,Tc,T): # Henry SI unti
     """
     kinetic inductance per unit length
@@ -60,9 +60,6 @@ def CouplingC(length,Ll,Cl,freq_Hz,Qint,g,Zr,option):
     elif option == 'H' : # half wave length
         Cc = sqrt(pi/(4*Qe*w0**2*Z0*Zr))
     
-    f=-4*Z0*w0**2*Cc+freq_Hz
-    print("Loaded resonance frequency GHz %.4f" %(f/1e9))
-    print("L=%.3fnH\tC=%.3fpF\tR_loss=%.3f KOhm\tCc=%.3fpF" % (L*1e9,C*1e12,R_loss/1e3,Cc*1e12))
     return Cc
     
 def TLResonator(w,s,freq_Hz,Rsq,Tc,T):
@@ -82,26 +79,33 @@ def TLResonator(w,s,freq_Hz,Rsq,Tc,T):
     Zr = sqrt(Ll/Cl)
     vp = phase_velocity(Ll,Cl)
     lambda_ = WaveLength(freq_Hz,vp)
-    print(" Geometric L: %.4g H \n Kinetic L : %.4g H\n Ratio K/G %.2f \n" %(Lg,Lk,Lk/Lg))
+    print(" Geometric C: %.4g \n Geometric L: %.4g H\nKinetic L : %.4g H\n Ratio K/G %.2f \n" %(Cl, Lg,Lk,Lk/Lg))
     print("TL line impedance Zr = %.4g Ohm" % Zr)
     #print("wave length lambda_ = %.4g um" % (lambda_/1.e-6))
-    return Cl,Ll,Zr,lambda_
+    return Cl,Ll,Zr,lambda_,Lg,Lk
     
 if __name__=='__main__':
     # Qint: internal Q
     # Qe : coupling Q
+    plt.close('all')
     Qint = 10e3
-    T_K = 0.08 # base temperature
-    freq_Hz_list = np.linspace(3e9,6e9,5) #Hz
+    T_K = 0.03 # base temperature
+    Tc=1.75
     w_m= 10 * 1e-6 #m, width of coplanar line
     s_m = 6 * 1e-6 #m, gap of coplanar line
     g =1 # g = Qint/Qe
     # Aluminum feed line: 
-    Cl,Ll,Zr,lambda_ =TLResonator(w=20e-6,s=12e-6,freq_Hz=5.1e9,Rsq=1,Tc=6,T=0.03) 
+    Cl,Ll,Zr,lambda_,Lg,Lk =TLResonator(w=w_m,s=s_m,freq_Hz=5.e9,Rsq=600,Tc=Tc,T=T_K) 
     Quarterwave,Halfwave = [False,True]
-    Rsq_list=[600]
+    Rsq_list=[650]
+    
+#    freq_Hz_list = np.array([5.5,6,6.5,7])*1e9 #um
+    length = (np.array([558,507,462,429,399,372])) #um
+    #lk = (1/(4*length*f))**2/Cl - Lg
+    
+    #plt.plot(lk,'o')
 
-if False:    
+if True:    
     # calculating resonator length given resonant frequency
     if False:
         resonator_length_um=[]
@@ -109,7 +113,10 @@ if False:
         for Rsq in Rsq_list:
             print("\nRsq = %f\n" % Rsq)
             for freq_Hz in freq_Hz_list:
-                Cl,Ll,Zr,lambda_ = TLResonator(w_m,s_m,freq_Hz,Rsq,Tc=6,T=T_K)
+                Cl,Ll,Zr,lambda_,Lg,Lk= TLResonator(w_m,s_m,freq_Hz,Rsq,Tc=Tc,T=T_K)
+                Ll = Ll/(1.06**2)
+                vp = phase_velocity(Ll,Cl)
+                lambda_ = vp/freq_Hz
                 if Quarterwave:
                     length = lambda_/4.
                     Cc = CouplingC(length,Ll,Cl,freq_Hz,Qint,g,Zr,'Q')
@@ -120,7 +127,7 @@ if False:
                 
                 resonator_length_um.append(length*1e6)
                 coupler_cap_pH.append(Cc*1e12)
-            
+            print('L/sq=%dpH'%(1e12*Lk*w_m))
             results = np.vstack((freq_Hz_list, resonator_length_um, coupler_cap_pH))
             results = np.transpose(results)
             print(results)
@@ -129,10 +136,10 @@ if False:
     else:
         for Rsq in Rsq_list:
             print("\nRsq = %f\n" % Rsq)
-            Cl,Ll,Zr,lambda_ = TLResonator(w_m,s_m,2e9,Rsq,Tc=2,T=T_K)
+            Cl,Ll,Zr,lambda_,Lg,Lk = TLResonator(w_m,s_m,2e9,Rsq,Tc=1.75,T=T_K)
             vp = phase_velocity(Ll,Cl)
-            resonator_length_um = np.array([950,750])
-            wavelength = 2*resonator_length_um*1e-6 
+            resonator_length_um = (np.array([558,507,462,429,399,372])) #um
+            wavelength = 4*resonator_length_um*1e-6 
             frequency_list=[]
             for length in wavelength:
                 frequency = vp/length/1e9

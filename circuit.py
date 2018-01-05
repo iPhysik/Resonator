@@ -6,7 +6,9 @@ from scipy.constants import hbar
 from utilities import plotting, save_load, Watt2dBm, dBm2Watt
 from circlefit import circlefit
 from calibration import calibration
-
+from scipy import stats
+import matplotlib.pyplot as plt
+from scipy.stats import chi2
 ##
 ## z_data_raw denotes the raw data
 ## z_data denotes the normalized data
@@ -249,7 +251,7 @@ class notch_port(circlefit, save_load, plotting, calibration):
         '''
         return (z_data-A2*(f_data-frcal))/amp_norm*np.exp(1j*(-alpha+2.*np.pi*delay*f_data))
 
-    def circlefit(self,f_data,z_data,fr=None,Ql=None,refine_results=False,calc_errors=True, m =100):
+    def circlefit(self,f_data,z_data,m=None,fr=None,Ql=None,refine_results=False,calc_errors=True):
         '''
         performs a circle fit on a frequency vs. complex resonator scattering data set
         Data has to be normalized!!
@@ -309,7 +311,7 @@ class notch_port(circlefit, save_load, plotting, calibration):
                 Qi_dia_corr_err =  np.sqrt(err1+2*err2)  # including correlations
                 Qc_err = np.sqrt( (1/np.cos(phi0))**2 * absQc_err**2 + (absQc * np.sin(phi0)/np.cos(phi0)**2)**2 * phi0_err**2 )
                 
-                errors = {"phi0_err":phi0_err, "Ql_err":Ql_err, "absQc_err":absQc_err, "fr_err":fr_err,"residue":chi_square,"Qi_no_corr_err":Qi_no_corr_err,"Qi_dia_corr_err": Qi_dia_corr_err,"chi_square_": chi_square/self.measurement_error_estimate(z_data,m), "Qc_dia_corr_err": Qc_err}
+                errors = {"phi0_err":phi0_err, "Ql_err":Ql_err, "absQc_err":absQc_err, "fr_err":fr_err,"residue":chi_square,"Qi_no_corr_err":Qi_no_corr_err,"Qi_dia_corr_err": Qi_dia_corr_err,"chi_square": chi_square, "Qc_dia_corr_err": Qc_err}
                 # "chi_square" assumes measurement deviation squared equals 1
                 # "chi_squre_" estimates measurement error from the mean distance between two adjacent data points of the first m data points
                 
@@ -320,27 +322,43 @@ class notch_port(circlefit, save_load, plotting, calibration):
             #just calc chisquared:
             fun2 = lambda x: self._residuals_notch_ideal(x,f_data,z_data)**2
             chi_square = 1./float(len(f_data)-len(p)) * (fun2(p)).sum()
+            chi_square = chi_square/self.measurement_error_estimate(f_data,z_data,m)
             errors = {"chi_square":chi_square}
             results.update(errors)
     
         return results
         
-    def results_from_fit_entire_model(self, f_data,z_data,fr,absQc,Ql,phi0,delay,a=1.,alpha=0.,ftol=1e-6,xtol=1e-6, m =100, maxfev=1000):
-        popt, cov, chisqr, infodict, errmsg, ier = self._fit_entire_model(f_data,z_data,fr,absQc,Ql,phi0,delay,a,alpha,ftol=ftol,xtol=xtol,maxfev=maxfev)
-        print('covariance from fit entire model', cov)
-        print(errmsg)
-        fr,absQc,Ql,phi0,delay,a,alpha = popt
+    def results_from_fit_entire_model(self, f_data,z_data,fr,absQc,Ql,phi0,delay,a=1.,alpha=0.,ftol=1e-6,xtol=1e-6, maxfev=1000,entire=True):
+        if entire:
+            popt, cov, residual, infodict, errmsg, ier = self._fit_entire_model(f_data,z_data,fr,absQc,Ql,phi0,delay,a,alpha,ftol=ftol,xtol=xtol,maxfev=maxfev)
+            fr,absQc,Ql,phi0,delay,a,alpha = popt
+            print(errmsg)
+            if cov is not None:
+                errors = np.sqrt(np.diagonal(cov))
+                fr_err,absQc_err,Ql_err,phi0_err,delay_err,a_err,alpha_err = errors
+                errors = {"fr_err":fr_err,"absQc_err":absQc_err,"Ql_err":Ql_err,"phi0_err":phi0_err,'delay_err':delay_err,'a_err':a_err,'alpha_err':alpha_err}
+        else:  
+            z_data = z_data*np.exp(2.*1j*np.pi*delay*f_data)
+            popt, cov, residual, infodict, errmsg, ier = self._fit_entire_model_except_delay(f_data,z_data,fr,absQc,Ql,phi0,a,alpha,ftol=ftol,xtol=xtol,maxfev=maxfev)
+            fr,absQc,Ql,phi0,a,alpha = popt
+            print(errmsg)
+            if cov is not None:
+                errors = np.sqrt(np.diagonal(cov))
+                fr_err,absQc_err,Ql_err,phi0_err,a_err,alpha_err = errors            
+                errors = {"fr_err":fr_err,"absQc_err":absQc_err,"Ql_err":Ql_err,"phi0_err":phi0_err,'a_err':a_err,'alpha_err':alpha_err,'delay_err': 0}
+                
+        #print('covariance from fit entire model', cov)
+        
+        
         complQc = absQc*np.exp(1j*((1.)*phi0))
         Qc = 1./(1./complQc).real   # here, taking the real part of (1/complQc) from diameter correction method
         Qi_dia_corr = 1./(1./Ql-1./Qc)
 #        Qi_no_corr = 1./(1./Ql-1./absQc)
         
         results = {"Qi":Qi_dia_corr,"absQc":absQc,"Qc":Qc,"Ql":Ql,"fr":fr,"phi0":phi0,'delay':delay,'a':a,'alpha':alpha}
-    
+        results.update( errors )
         #calculation of the error
         if cov is not None:
-            errors = np.sqrt(np.diagonal(cov))
-            fr_err,absQc_err,Ql_err,phi0_err,delay_err,a_err,alpha_err = errors
             #calc Qi with error prop (sum the squares of the variances and covariaces)
             #dQi_dQl = 1./((1./Ql-1./absQc)**2*Ql**2)
             #dQi_dabsQc = - 1./((1./Ql-1./absQc)**2*absQc**2)
@@ -357,14 +375,24 @@ class notch_port(circlefit, save_load, plotting, calibration):
             dQc_dphi0 = absQc * np.sin(phi0)/np.cos(phi0)**2            
             Qc_err = np.sqrt(dQc_dabsQc**2 * cov[1][1] + dQc_dphi0**2 * cov[3][3] + 2 * dQc_dabsQc * dQc_dphi0 * cov[1][3])
             
-            errors = {"Qi_err":Qi_dia_corr_err,"absQc_err":absQc_err,"Qc_err":Qc_err,"Ql_err":Ql_err,"fr_err":fr_err,"phi0_err":phi0_err,'chisquare':chisqr/self.measurement_error_estimate(z_data,m),'delay_err':delay_err,'a_err':a_err,'alpha_err':alpha_err}
             
+            #chisqr = residual/self.measurement_error_estimate(f_data,z_data,m)
+            #df = len(f_data)-len(popt)
+            #print('P value for degrees of freedom {}, and chisq {} is {}'.format(df,chisqr,1-chi2.cdf(chisqr,df)))
+            
+            errors = {"Qi_err":Qi_dia_corr_err,"Qc_err":Qc_err,"residual": residual, 'degrees of freedom': len(f_data)-len(popt)}
             results.update( errors )
         return results
         
-    def measurement_error_estimate(self,z_data,m):
-        z = z_data[0:m+1]
-        z_diff = np.diff(z_data)
+    def measurement_error_estimate(self,f_data,z_data,m):
+        f_min,f_max = m
+        index_min = np.argmin(np.abs(f_data-f_min))
+        index_max = np.argmin(np.abs(f_data-f_max))
+        index = np.arange(index_min,index_max+1)
+        z = z_data[index]
+        #plt.subplots()
+        #plt.plot(z.real,z.imag)
+        z_diff = np.diff(z)
         
         return (np.absolute(z_diff)**2).sum()/(2* z_diff.size)
         
