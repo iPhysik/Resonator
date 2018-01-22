@@ -89,25 +89,18 @@ if __name__=='__main__':
     # Qe : coupling Q
     plt.close('all')
     Qint = 10e3
+    g =1
     T_K = 0.03 # base temperature
     Tc=1.75
     w_m= 10 * 1e-6 #m, width of coplanar line
     s_m = 6 * 1e-6 #m, gap of coplanar line
-    g =1 # g = Qint/Qe
-    # Aluminum feed line: 
-    Cl,Ll,Zr,lambda_,Lg,Lk =TLResonator(w=w_m,s=s_m,freq_Hz=5.e9,Rsq=600,Tc=Tc,T=T_K) 
-    Quarterwave,Halfwave = [False,True]
-    Rsq_list=[650]
-    
-#    freq_Hz_list = np.array([5.5,6,6.5,7])*1e9 #um
-    length = (np.array([558,507,462,429,399,372])) #um
-    #lk = (1/(4*length*f))**2/Cl - Lg
-    
-    #plt.plot(lk,'o')
+    Rsq_list=[2500]
 
 if True:    
     # calculating resonator length given resonant frequency
-    if False:
+    if True:
+        Quarterwave,Halfwave = [False,True]
+        freq_Hz_list = np.linspace(5e9,8e9,6)
         resonator_length_um=[]
         coupler_cap_pH=[]
         for Rsq in Rsq_list:
@@ -126,7 +119,7 @@ if True:
                     Cc = CouplingC(length,Ll,Cl,freq_Hz,Qint,g,Zr,'H')
                 
                 resonator_length_um.append(length*1e6)
-                coupler_cap_pH.append(Cc*1e12)
+                coupler_cap_pH.append(Cc*1e12)  
             print('L/sq=%dpH'%(1e12*Lk*w_m))
             results = np.vstack((freq_Hz_list, resonator_length_um, coupler_cap_pH))
             results = np.transpose(results)
@@ -136,9 +129,10 @@ if True:
     else:
         for Rsq in Rsq_list:
             print("\nRsq = %f\n" % Rsq)
-            Cl,Ll,Zr,lambda_,Lg,Lk = TLResonator(w_m,s_m,2e9,Rsq,Tc=1.75,T=T_K)
+            Cl,Ll,Zr,lambda_,Lg,Lk = TLResonator(w_m,s_m,2e9,Rsq,Tc=Tc,T=T_K)
+            print('Lk/sq=%dpH'%(1e12*Lk*w_m))
             vp = phase_velocity(Ll,Cl)
-            resonator_length_um = (np.array([558,507,462,429,399,372])) #um
+            resonator_length_um = (np.array([68+500-5,61+456-5,54+421-5,49+390-5,45+364-5,42+341-5])) #um
             wavelength = 4*resonator_length_um*1e-6 
             frequency_list=[]
             for length in wavelength:
@@ -147,6 +141,8 @@ if True:
                 
             results = np.vstack((resonator_length_um,frequency_list))
             results = np.transpose(results)
+            frequency_list = np.array(frequency_list)
+            frequency_list = frequency_list.reshape((1,6))
             print(results)
             
     
