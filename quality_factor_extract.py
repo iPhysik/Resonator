@@ -78,33 +78,33 @@ if __name__ == "__main__":
 
     plt.close("all")    
     angles=np.linspace(0,2*np.pi,2000)
-    MEAS = False
+    MEAS = True
     
-    TEST,LORENTZIAN = [False,False]
+    TEST,LORENTZIAN = [False,True]
     fit_entire_with_delay = False
     
     # set file directory and name
     fdir = 'D:\\Dropbox\\Drive\\Projects\\Resonator\\'
     data_file_list=[ 
-'thin-res_6600-7100MHZ_0p063pH_smallcell_med.csv'
+'170811-ADC_InOx05_f4.24_prs_500mK-034016.txt'
 ]
-    temperature = 30
+    temperature = 500
     
     tf = np.array([])
     tS21 = np.array([])
     tatten = np.array([])
     for data_file in data_file_list:
-        fname = os.path.join(fdir,'MKID',data_file)
+        fname = os.path.join(fdir,'data','170801_InOx05',data_file)
 #    fname = os.path.join(fdir,'MKID',data_file[0])
 
         if MEAS:
-            f_,S21_, atten_ = loaddata(fname,skiprows=19, f_col=1,mag_col=2,phase_col=3,phase_unit='RAD',delimiter='\t') # phase_unit='DEG' or 'RAD'
+            f_,S21_, atten_ = loaddata(fname,skiprows=19, f_col=2,mag_col=3,phase_col=4,phase_unit='RAD',delimiter='\t') # phase_unit='DEG' or 'RAD'
         else:
             f_,S21_ = loaddata(fname,skiprows=10, f_col=0,mag_col=3,phase_col=4,delimiter=',',phase_unit='DEG')
             atten_=[0]
 #     
-        if False:
-            ch2atten = 20
+        if True:
+            ch2atten = 30
             for i in np.arange(np.size(atten_)):
                 if atten_[i] == ch2atten:
                     tf = np.hstack((tf,f_[i]))
@@ -120,29 +120,28 @@ if __name__ == "__main__":
         f_ = np.abs(m[:,0])
         S21_ = m[:,1]
     
-    atten=0
-#    if tatten.size==0 : 
-#        raise ValueError('ch2atten specified is not in list')
-#    else:
-#        if np.var(tatten)!=0 or ch2atten != np.average(tatten):
-#            raise ValueError('attenuation array is incorrect.')
-#        else:
-#            atten = np.average(tatten)
+    if tatten.size==0 : 
+        raise ValueError('ch2atten specified is not in list')
+    else:
+        if np.var(tatten)!=0 or ch2atten != np.average(tatten):
+            raise ValueError('attenuation array is incorrect.')
+        else:
+            atten = np.average(tatten)
             
     port = notch_port(f_,S21_)
     
     if True:
-        f_min,f_max = [5.7,5.85] # set range for final fit, which is fit_entire_model
-#        f_min,f_max = [4.26594-0.005, 4.26594+0.005]
+        f_min,f_max = [f_[0],f_[-1]] # set range for final fit, which is fit_entire_model
+#        f_min,f_max = [3.94, f_[-1]]
         index_min = np.argmin(np.abs(f_-f_min))
         index_max = np.argmin(np.abs(f_-f_max))
         index = np.arange(index_min,index_max+1)
         f=f_[index]
         S21=S21_[index]
-        f_min_delay,f_max_delay = [f_max-0.01,f_max]
-#        f_min_delay, f_max_delay = [f_min,f_min+0.01]
+        f_min_delay,f_max_delay = [f_min-0.0,f_min+0.006]
+#        f_min_delay, f_max_delay = [f_max-0.015,f_max]
         f_min_chisqr,f_max_chisqr = [f_min_delay,f_max_delay]
-        f_min_circlefit, f_max_circlefit = [f_min+0.00,f_max-0.0]
+        f_min_circlefit, f_max_circlefit = [f_min+0.00,f_max-0.01]
         f_min,f_max = [f_min_circlefit,f_max_circlefit]
         index_min = np.argmin(np.abs(f-f_min))
         index_max = np.argmin(np.abs(f-f_max))
@@ -177,7 +176,9 @@ if __name__ == "__main__":
         print('Initial Ql from skewed lorentzian fit %d'%Ql)
     else:
         Ql = 1000
-        frcal = f_data[np.argmin(np.abs(z_data))]
+#        frcal = f_data[np.argmin(np.abs(z_data))]
+        frcal = f_data[np.argmax(np.abs(z_data))]
+        
         print('Manually initialize Ql and fr by eyeball. Ql=%d, fr=%.4fGHz:'%(Ql,frcal))
     
     # remove delay
@@ -231,7 +232,7 @@ if __name__ == "__main__":
                                               port.fitresults['Ql'],
                                               port.fitresults['phi0']]
         
-        results_entire_model = port.results_from_fit_entire_model(f_data_origin,z_data_origin, fr,absQc,Ql,phi0,delay,a,alpha,ftol=1e-5,xtol=1e-5,maxfev=1000,entire=fit_entire_with_delay)
+        results_entire_model = port.results_from_fit_entire_model(f_data_origin,z_data_origin, fr,absQc,Ql,phi0,delay,a,alpha,ftol=1e-6,xtol=1e-6,maxfev=1000,entire=fit_entire_with_delay)
         if fit_entire_with_delay==False:
             if results_entire_model['delay_err'] ==0:
                 results_entire_model['delay_err'] = delay_err
@@ -255,14 +256,14 @@ if __name__ == "__main__":
         plt.subplot(2,1,1)
         plt.title('raw data vs simulated data, Mag')
         plt.plot(f,np.abs(S21),'o-')
-        plt.plot(f,np.abs(z_data_sim),c='r')
         plt.plot(f_data_origin,np.abs(z_data_origin),'.-',c='g')
+        plt.plot(f,np.abs(z_data_sim),c='r')
+
         plt.subplot(2,1,2)
         plt.title('raw data vs simulated data, phase')
         plt.plot(f,np.angle(S21),'.')
-        plt.plot(f,np.angle(z_data_sim),c='r')
         plt.plot(f_data_origin,np.angle(z_data_origin),'.',c='g')
-
+        plt.plot(f,np.angle(z_data_sim),c='r')
         
         pprint(results_entire_model)
         results = [temperature,

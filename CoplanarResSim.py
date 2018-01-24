@@ -94,12 +94,12 @@ if __name__=='__main__':
     Tc=1.75
     w_m= 10 * 1e-6 #m, width of coplanar line
     s_m = 6 * 1e-6 #m, gap of coplanar line
-    Rsq_list=[2500]
-
+    Rsq_list=[1200]
+    Quarterwave,Halfwave = [False,True]
+    
 if True:    
     # calculating resonator length given resonant frequency
-    if True:
-        Quarterwave,Halfwave = [False,True]
+    if False:
         freq_Hz_list = np.linspace(5e9,8e9,6)
         resonator_length_um=[]
         coupler_cap_pH=[]
@@ -132,8 +132,14 @@ if True:
             Cl,Ll,Zr,lambda_,Lg,Lk = TLResonator(w_m,s_m,2e9,Rsq,Tc=Tc,T=T_K)
             print('Lk/sq=%dpH'%(1e12*Lk*w_m))
             vp = phase_velocity(Ll,Cl)
-            resonator_length_um = (np.array([68+500-5,61+456-5,54+421-5,49+390-5,45+364-5,42+341-5])) #um
-            wavelength = 4*resonator_length_um*1e-6 
+            resonator_length_um = (np.array([686,610,549,499,457,422,392,366])) #um
+            
+            if Quarterwave:
+                wavelength = 4*resonator_length_um*1e-6 
+                
+            if Halfwave:
+                wavelength = 2*resonator_length_um*1e-6 
+            
             frequency_list=[]
             for length in wavelength:
                 frequency = vp/length/1e9
@@ -142,7 +148,7 @@ if True:
             results = np.vstack((resonator_length_um,frequency_list))
             results = np.transpose(results)
             frequency_list = np.array(frequency_list)
-            frequency_list = frequency_list.reshape((1,6))
+            frequency_list = frequency_list.reshape((1,8))
             print(results)
             
     

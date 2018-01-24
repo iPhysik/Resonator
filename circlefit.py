@@ -255,7 +255,7 @@ class circlefit(object):
         else:
             pcov = np.inf
         
-        chi = residuals(p0,f_data,z_data)
+        chi = residuals(popt,f_data,z_data)
         res = (chi**2).sum() # calculate residuals
         
         return popt, pcov, res, infodict, errmsg, ier
@@ -275,11 +275,12 @@ class circlefit(object):
         len_ydata = len(np.array(f_data))
         if (len_ydata > len(p0)) and params_cov is not None:  #p_final[1] is cov_x data  #this caculation is from scipy curve_fit routine - no idea if this works correctly...
             s_sq = (residuals(popt, np.array(f_data),np.array(z_data))**2).sum()/(len_ydata-len(p0))
+            print('residule', s_sq)
             pcov = params_cov * s_sq
         else:
             pcov = np.inf
         
-        chi = residuals(p0,f_data,z_data)
+        chi = residuals(popt,f_data,z_data)
         res = (chi**2).sum()
         
         return popt, pcov, res, infodict, errmsg, ier    
